@@ -74,7 +74,9 @@ export default function ChatPane({
         <p className="max-w-md text-sm leading-6 text-zinc-500 dark:text-zinc-400">
           {caseLoading
             ? 'Loading case…'
-            : 'Pick a case from the sidebar to start a practice encounter with the AI examiner. Add your Anthropic API key in Settings first.'}
+            : hasKey
+              ? 'Pick a case from the sidebar to start a practice encounter with the AI examiner.'
+              : 'Pick a case from the sidebar to start a practice encounter with the AI examiner. Invited by the app owner? Sign in under "Invited access" in the sidebar first — no API key needed. Otherwise add your Anthropic API key in Settings.'}
         </p>
         {error && !caseLoading && (
           <p className="max-w-md rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
@@ -86,7 +88,7 @@ export default function ChatPane({
           onClick={onOpenSidebar}
           className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 md:hidden dark:border-zinc-700 dark:hover:bg-zinc-800"
         >
-          Open case list
+          Open menu
         </button>
       </div>
     );
@@ -138,7 +140,9 @@ export default function ChatPane({
         <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5">
           {!hasKey && (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-              Add your Anthropic API key in Settings to start.
+              Invited by the app owner? Use &quot;Invited access&quot; in the sidebar to email
+              yourself a sign-in link — no API key needed. Otherwise add your Anthropic API key in
+              Settings to start.
             </p>
           )}
 

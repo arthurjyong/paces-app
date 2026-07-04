@@ -130,3 +130,29 @@ export const MODEL_LABELS: Record<(typeof MODEL_ALLOWLIST)[number], string> = {
 
 /** Client sends the user's Anthropic key in this header on every /api/examiner call. */
 export const API_KEY_HEADER = 'x-user-api-key';
+
+// ---------------------------------------------------------------------------
+// Demo access (whitelisted magic-link sign-in — see SPEC.md "Demo access")
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/demo/request ALWAYS answers 200 with exactly this message, whether
+ * or not the email is whitelisted (no email enumeration — the text must stay
+ * byte-identical for every input, but it may still be helpful).
+ */
+export const DEMO_REQUEST_MESSAGE =
+  'If this address has been invited, a sign-in link is on its way — check your inbox and spam folder. The link works for 15 minutes. No email? Check the address is exactly the one the app owner invited, then send again.';
+
+/** POST /api/demo/request response body. */
+export interface DemoRequestResponse {
+  message: string;
+}
+
+/**
+ * GET /api/demo/status response. `email` is masked (e.g. "c***@example.com") —
+ * the full address never leaves the server.
+ */
+export interface DemoStatus {
+  active: boolean;
+  email?: string;
+}

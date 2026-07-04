@@ -2,7 +2,10 @@
 //
 // Security invariants enforced here:
 // - The user's API key (API_KEY_HEADER) goes straight into the Anthropic SDK
-//   constructor. It is never stored, logged, or echoed (invariant 2).
+//   constructor. It is never stored, logged, or echoed (invariant 2). A BYOK
+//   key always takes precedence; without one, a valid demo_session cookie
+//   unlocks the server-held DEMO_ANTHROPIC_API_KEY, which is handled under the
+//   exact same rules (SPEC.md "Demo access").
 // - Error payloads are spoiler-free: upstream Anthropic errors are mapped to
 //   fixed generic strings; assembled prompts never appear in errors (invariant 1).
 // - caseId resolves via manifest lookup only (invariant 3).
@@ -35,6 +38,7 @@ import {
   type TokenUsage,
 } from '@/lib/types';
 import { ContentError, getCaseMeta } from '@/lib/content';
+import { getDemoApiKey } from '@/lib/demo';
 import { buildSystem } from '@/lib/prompt';
 import { searchKb } from '@/lib/kb';
 
@@ -128,9 +132,17 @@ function accumulateUsage(total: TokenUsage, usage: Usage): void {
  * messages are never forwarded (they could quote request content); every
  * branch returns a fixed generic string. Nothing is logged (invariant 2).
  */
-function mapAnthropicError(err: unknown): { status: number; message: string } {
+function mapAnthropicError(
+  err: unknown,
+  usingDemoKey: boolean
+): { status: number; message: string } {
   if (err instanceof Anthropic.AuthenticationError) {
-    return { status: 401, message: 'Invalid API key' };
+    // A BYOK 401 is the user's key; a demo-key 401 is the owner's server-held
+    // key — saying "Invalid API key" would send a keyless demo user hunting
+    // for a key they don't have.
+    return usingDemoKey
+      ? { status: 502, message: 'The demo access key was rejected by Anthropic — contact the app owner' }
+      : { status: 401, message: 'Invalid API key' };
   }
   if (err instanceof Anthropic.RateLimitError) {
     return { status: 429, message: 'Rate limited by Anthropic' };
@@ -357,10 +369,16 @@ export async function POST(request: Request) {
 
     // Invariant 2: the key is read from the header and passed straight to the
     // SDK constructor. It is never stored, logged, or included in any output.
-    const apiKey = request.headers.get(API_KEY_HEADER)?.trim();
+    // BYOK takes precedence; with no header key, a valid demo_session cookie
+    // (signed, unexpired, still-whitelisted — see lib/demo.ts) unlocks the
+    // server-held demo key, which follows the same never-leaves-the-server
+    // rules. No key from either path → the existing 401.
+    const byokKey = request.headers.get(API_KEY_HEADER)?.trim();
+    const apiKey = byokKey || (await getDemoApiKey());
     if (!apiKey) {
       return jsonError('Missing API key', 401);
     }
+    const usingDemoKey = !byokKey;
 
     const rawMessages = body.messages;
     if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
@@ -389,7 +407,7 @@ export async function POST(request: Request) {
       if ('error' in result) return jsonError(result.error, result.status);
       return NextResponse.json(result);
     } catch (err) {
-      const mapped = mapAnthropicError(err);
+      const mapped = mapAnthropicError(err, usingDemoKey);
       return jsonError(mapped.message, mapped.status);
     }
   } catch (err) {

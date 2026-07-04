@@ -9,12 +9,22 @@ import { MODEL_ALLOWLIST, MODEL_LABELS } from '@/lib/types';
 interface SettingsProps {
   apiKey: string;
   model: string;
+  /** True when a demo (invited-access) session is active — the key is then optional. */
+  demoActive: boolean;
   onApiKeyChange: (value: string) => void;
   onModelChange: (value: string) => void;
 }
 
-export default function Settings({ apiKey, model, onApiKeyChange, onModelChange }: SettingsProps) {
-  const [open, setOpen] = useState(true);
+export default function Settings({
+  apiKey,
+  model,
+  demoActive,
+  onApiKeyChange,
+  onModelChange,
+}: SettingsProps) {
+  // Collapsed by default: invited users never need this section, and BYOK
+  // users open it once. The API-key box must not be the first thing shown.
+  const [open, setOpen] = useState(false);
 
   return (
     <section className="border-b border-zinc-200 dark:border-zinc-800">
@@ -49,6 +59,11 @@ export default function Settings({ apiKey, model, onApiKeyChange, onModelChange 
             <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
               Stored only in this browser. Sent per-request to your own backend, never saved server-side.
             </p>
+            {demoActive && (
+              <p className="mt-1 text-xs leading-5 text-teal-700 dark:text-teal-300">
+                Not needed while invited access is active.
+              </p>
+            )}
           </div>
 
           <div>
