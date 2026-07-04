@@ -1,0 +1,12 @@
+# Upload filter for `vercel` CLI deploys. This file REPLACES .gitignore for
+# deployment uploads — deliberately, so that content/ (gitignored, never
+# committed) IS uploaded: the serverless functions need it at build time via
+# outputFileTracingIncludes. content/ stays server-side only; do not add it here.
+node_modules
+.next
+.git
+coverage
+*.tsbuildinfo
+.env*
+.DS_Store
+npm-debug.log*

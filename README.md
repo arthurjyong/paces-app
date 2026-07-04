@@ -1,36 +1,25 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PACES Practice — AI examiner
 
-## Getting Started
+A shareable, BYOK (bring-your-own-key) web app for practising MRCP PACES with an AI examiner. Pick one of 296 past-year mock encounters; the AI plays examiner (and simulated patient/relative for communication and consultation stations), reveals findings only as you examine, runs the viva, then marks you against the official PACES rubric with a structured per-skill marksheet.
 
-First, run the development server:
+Built on Next.js (App Router) + the Anthropic API. The candidate's browser only ever sees the case stem and the examiner's replies — expected findings, model answers, and the answer key stay server-side.
+
+## Run it locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+node scripts/build-content.mjs   # builds content/ from the PACES corpus (parent directory)
+npm run dev                      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open the app, paste your Anthropic API key in **Settings** (stored only in your browser, sent per-request, never saved server-side), pick a case, and begin.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`content/` is generated and gitignored — it contains the full hidden corpus (answer keys included), so it must never be committed. Regenerate it any time with the build script; the source corpus lives in the parent PACES directory (`5_Carousels_PACES23/`, `_index/`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## How it works
 
-## Learn More
+- **`scripts/build-content.mjs`** — copies the 296 enriched encounters, 156 canonical grounding notes, and the marking rubric into `content/`, builds a spoiler-free `manifest.json` (display titles are filename-derived; the case H1 names the diagnosis and stays hidden), and matches each case to its canonical notes for direct-fetch grounding.
+- **`POST /api/examiner`** — the one backend function: assembles the examiner brief (persona + rubric in one prompt-cached block, full case file + grounding notes in a second), calls Claude with a `search_kb` tool over the reference index as fallback grounding, and for marking forces a structured `submit_marksheet` tool call (per-skill A–G grades, totals recomputed server-side).
+- **Model picker** — Sonnet 4.6 by default; Opus 4.8 and Haiku 4.5 selectable. Cost is the user's dial; retrieval quality, not model size, does the heavy lifting.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`SPEC.md` is the binding design contract (security invariants, prompt text, API shapes). Deployable to Vercel as-is (`outputFileTracingIncludes` bundles `content/` into the serverless functions — run the content build before deploying).
