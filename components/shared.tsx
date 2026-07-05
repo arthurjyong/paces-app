@@ -98,23 +98,6 @@ export function usageLine(u: TokenUsage, kbLookups?: number): string {
   return s;
 }
 
-/** Tiny per-skill letter badges. */
-export function SkillBadges({ skills }: { skills: SkillId[] }) {
-  return (
-    <span className="inline-flex gap-0.5 align-middle">
-      {skills.map((s) => (
-        <span
-          key={s}
-          title={SKILL_NAMES[s]}
-          className="rounded border border-zinc-300 px-1 text-[10px] leading-4 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
-        >
-          {s}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 /**
  * Whitespace-preserving text with minimal **bold** handling only — no markdown
  * library per spec. Unbalanced markers are rendered as plain text.

@@ -12,9 +12,11 @@ export interface CaseMeta {
   /** source directory name: a dated sitting ("2024-03_CGH_Cx") or a synthetic "LIB_<collection>" */
   sitting: string;
   /** human label — hospital + month for carousels ("CGH · Mar 2024"; same-month sittings share a
-   *  label and merge in the picker) or the collection's source name ("Scenario Bank") */
+   *  label and merge in the picker) or the pooled type bank for standalone cases
+   *  ("Consult bank" / "Communication bank" / "Examination bank" — provenance is internal only) */
   sittingLabel: string;
-  /** carousel: encounter 1..8 within the sitting; library: the case's file number (1..N, N up to 75) */
+  /** carousel: encounter 1..8 within the sitting; library: sequential display number within its
+   *  pooled bank (the stable id keys off the collection FILE number instead — never this) */
   encounterNo: number;
   /** 1..5 */
   station: number;

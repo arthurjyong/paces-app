@@ -307,20 +307,22 @@ for (const sitting of sittings) {
 const carouselCount = cases.length;
 
 // ---------- standalone case library (Tier-1 expansion, additive) ----------
-// Each collection dir becomes its own picker group (via sittingLabel). Files reuse the same
-// enriched-encounter format + `NNN_Station<S>_<Specialty>.md` filename convention as carousels,
-// so the same stem/skills/canonical machinery applies. displayTitle stays spoiler-free.
-// Plain source names — the picker's default view now groups by encounter TYPE,
-// so these labels act as the per-case source tag (and as group headers only in
-// the secondary "By source" view). No type prefix, no author names/initials.
-const LIBRARY_LABELS = {
-  station5_scenario_bank: 'Scenario Bank',
-  station5_bank2: 'Consult bank II',
-  consult_bank: 'Consult bank',
-  comm_bank: 'Comm bank',
-  comm_rcp: 'RCP pack',
-  eye_osce: 'Eye OSCEs',
+// Files reuse the same enriched-encounter format + `NNN_Station<S>_<Specialty>.md` filename
+// convention as carousels, so the same stem/skills/canonical machinery applies. displayTitle
+// stays spoiler-free.
+// Per Arthur (2026-07-06): non-carousel provenance is INTENTIONALLY hidden from users — every
+// standalone case pools into one type-named bank ("Consult bank" / "Communication bank" /
+// "Examination bank") via sittingLabel, and meta.encounterNo is renumbered sequentially within
+// its bank (collections are processed in sorted order, matching the manifest's
+// sitting-then-encounterNo sort, so numbers display in order). Collection dirs remain the
+// internal storage unit — their names still flow into served id/sitting/file fields, so dir
+// names must stay neutral (no author names/initials).
+const BANK_LABELS = {
+  consultation: 'Consult bank',
+  communication: 'Communication bank',
+  examination: 'Examination bank',
 };
+const bankCounters = { consultation: 0, communication: 0, examination: 0 };
 
 /** Match H1 title + first blockquote against canonical terms → top-3 slugs (server-only; names the dx). */
 function matchCanonicalSlugs(h1, firstBlockquote) {
@@ -347,12 +349,13 @@ if (fs.existsSync(SRC_LIBRARY)) {
     .map((d) => d.name)
     .sort();
   for (const collection of collections) {
-    const label = LIBRARY_LABELS[collection] || collection;
     const files = fs.readdirSync(path.join(SRC_LIBRARY, collection)).filter((f) => f.endsWith('.md')).sort();
     for (const file of files) {
       const fm = file.match(/^(\d+)_Station(\d+)_([A-Za-z]+)\.md$/);
       if (!fm) fail(`unrecognised library case filename: ${collection}/${file}`);
-      const encounterNo = parseInt(fm[1], 10);
+      // The FILE number keys the stable id (never renumber); the served
+      // encounterNo is the bank-wide display number assigned below.
+      const fileNo = parseInt(fm[1], 10);
       const station = parseInt(fm[2], 10);
       const specialty = fm[3];
       const encounterType =
@@ -378,11 +381,12 @@ if (fs.existsSync(SRC_LIBRARY)) {
       const outName = `LIB_${collection}__${file}`;
       fs.writeFileSync(path.join(OUT_CASES, outName), raw);
 
+      bankCounters[encounterType] += 1;
       cases.push({
-        id: `LIB_${collection}__${encounterNo}`,
+        id: `LIB_${collection}__${fileNo}`,
         sitting: `LIB_${collection}`,
-        sittingLabel: label,
-        encounterNo,
+        sittingLabel: BANK_LABELS[encounterType],
+        encounterNo: bankCounters[encounterType],
         station,
         specialty,
         encounterType,

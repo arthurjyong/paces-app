@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { MarkSheet, PublicCase, TokenUsage } from '@/lib/types';
-import { BEGIN_MESSAGE, RichText, SkillBadges, usageLine, type TranscriptEntry } from './shared';
+import { BEGIN_MESSAGE, RichText, usageLine, type TranscriptEntry } from './shared';
 import MarksheetCard from './MarksheetCard';
 
 interface ChatPaneProps {
@@ -109,10 +109,7 @@ export default function ChatPane({
           ☰
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="truncate text-sm font-semibold">{meta.displayTitle}</h1>
-            <SkillBadges skills={meta.skills} />
-          </div>
+          <h1 className="truncate text-sm font-semibold">{meta.displayTitle}</h1>
           <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
             {meta.sittingLabel} · {meta.timing}
           </p>
