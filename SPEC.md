@@ -1,6 +1,6 @@
 # PACES AI-Examiner MVP — build spec (binding contract)
 
-One screen (chat + case picker + BYOK key box) + one examiner backend function + the existing 296-case corpus. A candidate picks a case, the AI plays PACES examiner/patient grounded on the case file + canonical notes, reveals findings manoeuvre-by-manoeuvre, runs the viva, and marks against the official rubric with structured output. Stack: Next.js 16 (App Router, TypeScript, Tailwind v4) + `@anthropic-ai/sdk`. Deployable to Vercel; runs locally with `npm run dev`.
+One screen (chat + case picker + BYOK key box) + one examiner backend function + the existing 503-case corpus (287 carousel encounters + 216 standalone library cases). A candidate picks a case, the AI plays PACES examiner/patient grounded on the case file + canonical notes, reveals findings manoeuvre-by-manoeuvre, runs the viva, and marks against the official rubric with structured output. Stack: Next.js 16 (App Router, TypeScript, Tailwind v4) + `@anthropic-ai/sdk`. Deployable to Vercel; runs locally with `npm run dev`.
 
 **App root:** `/Volumes/Acer FA200 4TB/Work/Exams-&-Training/PACES/paces-app` (path contains spaces — always quote in shell commands).
 **Corpus root (source data):** the parent directory, i.e. `..` from the app root.
@@ -30,8 +30,9 @@ One screen (chat + case picker + BYOK key box) + one examiner backend function +
 Reads the corpus and emits `content/` in the app root. Must be re-runnable (idempotent, wipes and rebuilds `content/`). Run it once at the end and report stats.
 
 Sources (relative to app root):
-- Cases: `../5_Carousels_PACES23/Carousels/_enriched/<sitting>/<N>_Station<S>_<Specialty>.md` — 37 sitting dirs × 8 files = 296.
-- Canonical notes: `../_index/canonical/*.md` — 156 files, YAML-ish front matter between `---` lines with `condition:`, `aliases:` (YAML list, inline `[a, b]` or `- item` lines), `systems:`, `sources_used:`.
+- Carousel cases: `../5_Carousels_PACES23/Carousels/_enriched/<sitting>/<N>_Station<S>_<Specialty>.md` — 37 sitting dirs × 8 files = 296 slots; the 9 forgotten/placeholder slots are recorded in `content/placeholders.json` and NOT served (assert served 287 + placeholders 9 === 296).
+- Library cases: `../_case_library/<collection>/<NNN>_Station<S>_<Specialty>.md` — 216 standalone cases in 6 collections; each collection dir maps to a neutral source label via `LIBRARY_LABELS` (no author names/initials — the collection dir name flows into served `id`/`sitting`/`file` fields, so dir names must be neutral too). Served total: 503.
+- Canonical notes: `../_index/canonical/*.md` — 211 files (assert ≥ 156), YAML-ish front matter between `---` lines with `condition:`, `aliases:` (YAML list, inline `[a, b]` or `- item` lines), `systems:`, `sources_used:`.
 - Master index: `../_index/MASTER_INDEX.json` — use `topic_lookup` (term → array of `{corpus, file, location}`).
 - Rubric: `../5_Carousels_PACES23/MARKING_RUBRIC_PACES23.md`.
 
@@ -47,12 +48,12 @@ Per-case parsing rules:
 - `encounterType`: specialty "Communication" → `communication`; "Consultation" → `consultation`; else `examination`.
 - `skills`: parse the line-2 blockquote `skills: A·B·D·E·G` (middot-separated). Fallback by type: examination → A,B,D,E,G; communication → C,E,F,G; consultation → A–G. Report any file where parsed skills differ from the fallback expectation (informational, not fatal).
 - `timing` by encounterType: examination → "6 min exam + 4 min Q&A"; communication → "5 min reading + 10 min"; consultation → "5 min reading + 15 min + 5 min Q&A".
-- `sittingLabel`: from sitting dir name — `2024-03_CGH_Cx` → "CGH · Mar 2024"; suffixes: `_Cx` → "" (drop), `_Cycle1` → " · Cycle 1", `_AM`/`_PM` → " · AM"/" · PM". Format: `<HOSPITAL> · <Mon> <YYYY><suffix>`.
-- `displayTitle`: `Station <S> · <Specialty>` — from filename metadata ONLY (invariant 1).
+- `sittingLabel`: from sitting dir name — `2024-03_CGH_Cx` → "CGH · Mar 2024". Format: `<HOSPITAL> · <Mon> <YYYY>`; the dir-name suffix (`_Cx` / `_CycleN` / `_AM` / `_PM`) is validated but DROPPED (a format artifact — same-month sittings share a label and merge in the picker). Library cases use the collection's `LIBRARY_LABELS` source name instead.
+- `displayTitle`: `Station <S> · <Specialty>` for examination/communication; every `consultation` case (carousel + library) is plain `"Consultation"` (no station number — consult / "Station 5" / brief clinical consultation are the same skill; the number is a format artifact). From filename metadata ONLY (invariant 1).
 - Stem extraction (validation only — the stem is served at runtime by Agent B's parser, but Agent A must verify every file HAS one): section from the `## Candidate stem` heading (prefix match) to the next `## ` heading. Fail the build loudly listing any file without a non-empty stem.
 - `canonicalSlugs`: match the case's H1 title (+ first blockquote line) against every canonical note's `condition` + `aliases`: case-insensitive, word-boundary-ish substring (alias appears in title text); consider only aliases/conditions ≥ 6 chars to avoid junk matches; score by matched-string length; keep top 3 slugs max. Empty is fine (most communication cases). Report the match-rate per encounterType.
 
-Report back: case count (must be 296), canonical count (must be 156), kb term count, stem-extraction failures (must be 0), canonical match-rate by type, and 3 sample manifest entries.
+Report back: case count (must be 503 = 287 carousel + 216 library, with carousel 287 + placeholders 9 === 296), canonical count (must be ≥ 156), kb term count, stem-extraction failures (must be 0), canonical match-rate by type, and 3 sample manifest entries.
 
 ## Agent B — backend
 
@@ -134,17 +135,17 @@ Single-page app in `app/page.tsx` + `components/`. Clean, calm, clinical look (T
 
 Layout: left sidebar + main chat pane.
 - **Sidebar — Settings** (collapsible): password-type input for the Anthropic API key (persist to `localStorage` key `paces.apiKey`; note under it: "Stored only in this browser. Sent per-request to your own backend, never saved server-side."), model `<select>` from `MODEL_ALLOWLIST` with `MODEL_LABELS` (persist `paces.model`).
-- **Sidebar — Case picker**: fetch `/api/manifest` on load. Filter chips by specialty (All / Cardiovascular / Respiratory / Neurology / Abdominal / Communication / Consultation) + a "Random case" button. Cases grouped by `sittingLabel` (collapsible groups), each row = `displayTitle` (+ skills as tiny badges). Selecting a case fetches `/api/case/[id]`.
+- **Sidebar — Case picker**: fetch `/api/manifest` on load. Filter chips by specialty (All / Cardiovascular / Respiratory / Neurology / Abdominal / Communication / Consultation), a theme dropdown, + a "Random case" button. Two groupings (segmented toggle, collapsible groups): default **"By type"** — Consultation / Communication / Examination · `<system>`, each row = `sittingLabel` (the source tag) + `#encounterNo` + skills badges; **"By source"** — grouped by `sittingLabel` (same-month sittings merge), each row = `displayTitle` + `#encounterNo` + badges. Selecting a case fetches `/api/case/[id]`.
 - **Main pane**: on case select, show a stem card (distinct styling, the `stem` markdown as pre-wrapped text) with a "Begin encounter" button. Begin sends the literal user message `[BEGIN ENCOUNTER]` (render this turn in the transcript as a system-y "Encounter started" divider, not as a user bubble). Then a normal chat: user input (textarea, Enter to send, Shift+Enter newline), assistant/user bubbles, a subtle per-reply token-usage line (e.g. "↑1.2k ↓340 · cache 8.1k"), loading indicator while awaiting. Buttons in a top bar: "Finish & marksheet" (sends `action:'mark'`, then renders the marksheet as a card: one row per skill — skill letter, name, grade as a coloured chip (2 green "Satisfactory" / 1 amber "Borderline" / 0 red "Unsatisfactory"), justification; then total/maxTotal, overall impression, biggest improvement) and "New case" (confirm, then reset).
 - All examiner calls: `POST /api/examiner` with the full transcript (client holds state; `[BEGIN ENCOUNTER]` included as the first user message), key in `API_KEY_HEADER`, chosen model. Missing key → inline banner "Add your Anthropic API key in Settings to start." Errors → red inline notice with the server's `error` string, transcript preserved, input re-enabled.
 - No streaming in MVP (plain JSON round-trip). Keep state in React only (no persistence of transcripts).
 
 ## Integration & smoke tests (Integrator agent)
 
-1. `node scripts/build-content.mjs` → verify content/ outputs + manifest count 296.
+1. `node scripts/build-content.mjs` → verify content/ outputs + manifest count 503.
 2. `npx tsc --noEmit` and `npm run build` → fix until clean (any file).
 3. `npm run dev` on a free port (e.g. 3199), then:
-   - `GET /api/manifest` → 200, 296 cases, spot-check a `CaseMeta` for spoiler-free `displayTitle`.
+   - `GET /api/manifest` → 200, 503 cases, spot-check a `CaseMeta` for spoiler-free `displayTitle`.
    - `GET /api/case/2024-03_CGH_Cx__4` → stem present, no "Expected findings"/"Answer key" text in payload.
    - `POST /api/examiner?dryRun=1` for the same case → two system blocks; block 1 contains "MARKING RUBRIC"; block 2 contains "Answer key"; `toolNames` = ["search_kb"].
    - `POST /api/examiner` without key → 401. With key `sk-ant-invalid` → 401 mapped cleanly (proves the Anthropic call path executes).

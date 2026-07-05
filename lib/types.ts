@@ -7,13 +7,14 @@ export type Grade = 0 | 1 | 2;
 export type EncounterType = 'examination' | 'communication' | 'consultation';
 
 export interface CaseMeta {
-  /** "<sitting>__<encounterNo>", e.g. "2024-03_CGH_Cx__4" */
+  /** "<sitting>__<encounterNo>": carousel "2024-03_CGH_Cx__4", library "LIB_<collection>__12" */
   id: string;
-  /** e.g. "2024-03_CGH_Cx" (source directory name) */
+  /** source directory name: a dated sitting ("2024-03_CGH_Cx") or a synthetic "LIB_<collection>" */
   sitting: string;
-  /** human label, e.g. "CGH · Mar 2024" */
+  /** human label — hospital + month for carousels ("CGH · Mar 2024"; same-month sittings share a
+   *  label and merge in the picker) or the collection's source name ("Scenario Bank") */
   sittingLabel: string;
-  /** 1..8 */
+  /** carousel: encounter 1..8 within the sitting; library: the case's file number (1..N, N up to 75) */
   encounterNo: number;
   /** 1..5 */
   station: number;
@@ -27,6 +28,9 @@ export interface CaseMeta {
   displayTitle: string;
   /** filename relative to content/cases/, e.g. "2024-03_CGH_Cx__4_Station3_Cardiovascular.md" */
   file: string;
+  /** clinical theme / topic — e.g. "endocrine", "ophthalmology". An ATTRIBUTE, not a station;
+   *  safe for the client (same granularity as specialty). May be undefined if themes not built. */
+  theme?: string;
   /** matched canonical grounding notes (slugs without .md); may be empty */
   canonicalSlugs: string[];
 }

@@ -1,8 +1,11 @@
 'use client';
 
 // Sidebar case picker: specialty filter chips, a random-case button, and the
-// case list grouped by sitting (collapsible groups). Selection is delegated to
-// the parent, which fetches /api/case/[id].
+// case list in two groupings — by encounter TYPE (default: Consultation /
+// Communication / Examination · system, with the source sitting/collection as
+// the row label) or by SOURCE (the original sitting/collection groups, for
+// browsing a carousel as a unit). Selection is delegated to the parent, which
+// fetches /api/case/[id].
 
 import { useMemo, useState } from 'react';
 import type { PublicCaseMeta, PublicManifest } from '@/lib/types';
@@ -19,6 +22,24 @@ const FILTERS = [
 ] as const;
 
 type Filter = (typeof FILTERS)[number];
+type View = 'type' | 'source';
+
+// Fixed ordering for the by-type groups; any exam specialty not listed here
+// (none today) sorts after these, alphabetically.
+const TYPE_GROUP_ORDER = [
+  'Consultation',
+  'Communication',
+  'Examination · Cardiovascular',
+  'Examination · Respiratory',
+  'Examination · Neurology',
+  'Examination · Abdominal',
+];
+
+function typeGroupOf(c: PublicCaseMeta): string {
+  if (c.encounterType === 'consultation') return 'Consultation';
+  if (c.encounterType === 'communication') return 'Communication';
+  return `Examination · ${c.specialty}`;
+}
 
 interface CasePickerProps {
   manifest: PublicManifest | null;
@@ -28,25 +49,50 @@ interface CasePickerProps {
 }
 
 export default function CasePicker({ manifest, manifestError, selectedId, onSelect }: CasePickerProps) {
+  const [view, setView] = useState<View>('type');
   const [filter, setFilter] = useState<Filter>('All');
+  const [theme, setTheme] = useState<string>('All');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const themes = useMemo<string[]>(() => {
+    if (!manifest) return [];
+    return Array.from(new Set(manifest.cases.map((c) => c.theme).filter(Boolean) as string[])).sort();
+  }, [manifest]);
 
   const filtered = useMemo<PublicCaseMeta[]>(() => {
     if (!manifest) return [];
-    if (filter === 'All') return manifest.cases;
-    return manifest.cases.filter((c) => c.specialty === filter);
-  }, [manifest, filter]);
+    return manifest.cases.filter(
+      (c) => (filter === 'All' || c.specialty === filter) && (theme === 'All' || c.theme === theme)
+    );
+  }, [manifest, filter, theme]);
 
-  // Group by sittingLabel, preserving manifest order (sorted by sitting then encounterNo).
+  // Group by type group or by sittingLabel. Within a group, manifest order is
+  // preserved (sorted by sitting then encounterNo); same-label sittings (e.g.
+  // two same-month cycles at one hospital) merge into one group by design.
   const groups = useMemo<Array<[string, PublicCaseMeta[]]>>(() => {
     const map = new Map<string, PublicCaseMeta[]>();
     for (const c of filtered) {
-      const g = map.get(c.sittingLabel);
+      const key = view === 'type' ? typeGroupOf(c) : c.sittingLabel;
+      const g = map.get(key);
       if (g) g.push(c);
-      else map.set(c.sittingLabel, [c]);
+      else map.set(key, [c]);
     }
-    return Array.from(map.entries());
-  }, [filtered]);
+    const entries = Array.from(map.entries());
+    if (view === 'type') {
+      const rank = (label: string) => {
+        const i = TYPE_GROUP_ORDER.indexOf(label);
+        return i === -1 ? TYPE_GROUP_ORDER.length : i;
+      };
+      entries.sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
+    }
+    return entries;
+  }, [filtered, view]);
+
+  function switchView(v: View) {
+    if (v === view) return;
+    setView(v);
+    setExpanded(new Set());
+  }
 
   function toggleGroup(label: string) {
     setExpanded((prev) => {
@@ -79,6 +125,28 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
             Random case
           </button>
         </div>
+        <div className="mb-2 flex rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700" role="group" aria-label="Group cases by">
+          {(
+            [
+              ['type', 'By type'],
+              ['source', 'By source'],
+            ] as Array<[View, string]>
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => switchView(v)}
+              aria-pressed={view === v}
+              className={`flex-1 rounded px-2 py-0.5 text-xs transition-colors ${
+                view === v
+                  ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-teal-950'
+                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex flex-wrap gap-1">
           {FILTERS.map((f) => (
             <button
@@ -95,6 +163,21 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
             </button>
           ))}
         </div>
+        {themes.length > 0 && (
+          <select
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+            aria-label="Filter by clinical theme"
+            className="mt-2 w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+          >
+            <option value="All">All themes</option>
+            {themes.map((t) => (
+              <option key={t} value={t}>
+                {t.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
@@ -141,7 +224,8 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
                               : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
                           }`}
                         >
-                          <span className="truncate">{c.displayTitle}</span>
+                          <span className="min-w-0 flex-1 truncate">{view === 'type' ? c.sittingLabel : c.displayTitle}</span>
+                          <span className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">#{c.encounterNo}</span>
                           <SkillBadges skills={c.skills} />
                         </button>
                       </li>

@@ -14,6 +14,9 @@ const SRC_CASES = path.join(CORPUS_ROOT, '5_Carousels_PACES23', 'Carousels', '_e
 const SRC_CANONICAL = path.join(CORPUS_ROOT, '_index', 'canonical');
 const SRC_MASTER_INDEX = path.join(CORPUS_ROOT, '_index', 'MASTER_INDEX.json');
 const SRC_RUBRIC = path.join(CORPUS_ROOT, '5_Carousels_PACES23', 'MARKING_RUBRIC_PACES23.md');
+// Standalone case library (Tier-1 content expansion): _case_library/<collection>/NNN_Station<S>_<Specialty>.md
+// — distilled/enriched cases that are NOT part of a dated carousel sitting. Ingested additively below.
+const SRC_LIBRARY = path.join(CORPUS_ROOT, '_case_library');
 
 const OUT = path.join(APP_ROOT, 'content');
 const OUT_CASES = path.join(OUT, 'cases');
@@ -77,9 +80,16 @@ function extractStem(md) {
 }
 
 // ---------- wipe & recreate content/ ----------
+// themes.json is written into content/ by ../_index/build_db.py, not by this
+// script — carry it across the wipe so running the two scripts in either order
+// can't silently drop the theme sidecar (the app treats it as optional and the
+// theme filter would just vanish).
+const themesPath = path.join(OUT, 'themes.json');
+const savedThemes = fs.existsSync(themesPath) ? fs.readFileSync(themesPath, 'utf8') : null;
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT_CASES, { recursive: true });
 fs.mkdirSync(OUT_CANONICAL, { recursive: true });
+if (savedThemes !== null) fs.writeFileSync(themesPath, savedThemes);
 
 // ---------- canonical notes ----------
 const canonicalFiles = fs.readdirSync(SRC_CANONICAL).filter((f) => f.endsWith('.md')).sort();
@@ -163,18 +173,17 @@ const TIMING = {
 };
 
 function sittingLabelFrom(sitting) {
-  // e.g. "2024-03_CGH_Cx" -> "CGH · Mar 2024"; "2025-10_KTPH_AM" -> "KTPH · Oct 2025 · AM"
+  // e.g. "2024-03_CGH_Cx" -> "CGH · Mar 2024". The dir-name suffix (Cx / CycleN /
+  // AM / PM) distinguishes same-month carousels in the source tree but is a format
+  // artifact — labels show only hospital + month (per Arthur, 2026-07-06), so
+  // same-month sittings share a label and merge into one picker group.
   const m = sitting.match(/^(\d{4})-(\d{2})_([A-Za-z]+)_(\w+)$/);
   if (!m) fail(`unrecognised sitting dir name: ${sitting}`);
   const [, year, month, hospital, rawSuffix] = m;
   const mon = MONTHS[parseInt(month, 10) - 1];
   if (!mon) fail(`bad month in sitting dir name: ${sitting}`);
-  let suffix = '';
-  if (rawSuffix === 'Cx') suffix = '';
-  else if (/^Cycle(\d+)$/.test(rawSuffix)) suffix = ` · Cycle ${rawSuffix.match(/^Cycle(\d+)$/)[1]}`;
-  else if (rawSuffix === 'AM' || rawSuffix === 'PM') suffix = ` · ${rawSuffix}`;
-  else fail(`unrecognised sitting suffix "${rawSuffix}" in ${sitting}`);
-  return `${hospital} · ${mon} ${year}${suffix}`;
+  if (!/^(Cx|Cycle\d+|AM|PM)$/.test(rawSuffix)) fail(`unrecognised sitting suffix "${rawSuffix}" in ${sitting}`);
+  return `${hospital} · ${mon} ${year}`;
 }
 
 /** Parse the skills token from the line-2 blockquote; returns SkillId[] or null. */
@@ -196,12 +205,6 @@ function parseSkillsLine(line2) {
   return letters;
 }
 
-const PLACEHOLDER_STEM = (specialty) => `## Candidate stem  (read aloud)
-**No past-year recall exists for this encounter slot.** This is a deliberate free-pick placeholder kept so the carousel remains a complete 8-station loop — no specific case was recorded by candidates for this ${specialty.toLowerCase()} encounter, and none has been invented.
-
-To practise this slot, run any standard ${specialty.toLowerCase()} scenario of your choice from your own case bank, or simply pick a different case from the case picker.
-`;
-
 const sittings = fs
   .readdirSync(SRC_CASES, { withFileTypes: true })
   .filter((d) => d.isDirectory())
@@ -210,7 +213,7 @@ const sittings = fs
 
 const cases = [];
 const stemFailures = [];
-const injectedPlaceholders = [];
+const placeholders = []; // empty carousel slots (forgotten by candidates) — recorded, not served
 const skillsMismatches = [];
 const matchStats = {}; // encounterType -> { total, matched }
 
@@ -231,23 +234,21 @@ for (const sitting of sittings) {
     const h1 = srcLines[0] || '';
     const firstBlockquote = srcLines.find((l) => l.startsWith('> ')) || '';
 
-    // --- stem (validation; inject a synthetic stem ONLY for declared placeholder slots) ---
-    let stem = extractStem(raw);
-    if (stem === null && /placeholder/i.test(firstBlockquote)) {
-      // Free-pick placeholder slot (no past-year recall): synthesise a stem in the COPY
-      // so every served case has a candidate-visible stem. Source corpus is untouched.
-      const lines = raw.split('\n');
-      let insertAt = lines.findIndex((l) => l.startsWith('## '));
-      if (insertAt === -1) insertAt = lines.length;
-      lines.splice(
-        insertAt,
-        0,
-        '<!-- stem synthesized by scripts/build-content.mjs: placeholder slot had no Candidate stem in the source -->',
-        ...PLACEHOLDER_STEM(specialty).split('\n')
-      );
-      raw = lines.join('\n');
-      stem = extractStem(raw);
-      injectedPlaceholders.push(`${sitting}/${file}`);
+    // --- placeholder slots: a candidate forgot this encounter, so it is NOT a real case.
+    // Skip it (do not serve or count it), but record the empty slot so a future carousel
+    // recreation knows to substitute a standard case of the SAME type. ---
+    const stem = extractStem(raw);
+    if (stem === null && (/placeholder/i.test(firstBlockquote) || /no past-year recall/i.test(raw))) {
+      placeholders.push({
+        sitting,
+        sittingLabel,
+        station,
+        encounterNo,
+        specialty,
+        encounterType,
+        note: `Empty slot — no past-year recall. To recreate this carousel, substitute any standard ${encounterType} case${encounterType === 'examination' ? ` (${specialty})` : ''}.`,
+      });
+      continue;
     }
     if (stem === null || stem.length === 0) {
       stemFailures.push(`${sitting}/${file}`);
@@ -296,10 +297,103 @@ for (const sitting of sittings) {
       encounterType,
       skills,
       timing: TIMING[encounterType],
-      displayTitle: `Station ${station} · ${specialty}`,
+      displayTitle: encounterType === 'consultation' ? 'Consultation' : `Station ${station} · ${specialty}`,
       file: outName,
       canonicalSlugs,
     });
+  }
+}
+
+const carouselCount = cases.length;
+
+// ---------- standalone case library (Tier-1 expansion, additive) ----------
+// Each collection dir becomes its own picker group (via sittingLabel). Files reuse the same
+// enriched-encounter format + `NNN_Station<S>_<Specialty>.md` filename convention as carousels,
+// so the same stem/skills/canonical machinery applies. displayTitle stays spoiler-free.
+// Plain source names — the picker's default view now groups by encounter TYPE,
+// so these labels act as the per-case source tag (and as group headers only in
+// the secondary "By source" view). No type prefix, no author names/initials.
+const LIBRARY_LABELS = {
+  station5_scenario_bank: 'Scenario Bank',
+  station5_bank2: 'Consult bank II',
+  consult_bank: 'Consult bank',
+  comm_bank: 'Comm bank',
+  comm_rcp: 'RCP pack',
+  eye_osce: 'Eye OSCEs',
+};
+
+/** Match H1 title + first blockquote against canonical terms → top-3 slugs (server-only; names the dx). */
+function matchCanonicalSlugs(h1, firstBlockquote) {
+  const matchText = `${h1.replace(/^#\s*/, '')}\n${firstBlockquote.replace(/^>\s*/, '')}`.toLowerCase();
+  const scored = [];
+  for (const [slug, terms] of canonicalTerms) {
+    let best = 0;
+    for (const term of terms) {
+      if (term.length <= best) continue;
+      const re = new RegExp(`(?<![a-z0-9])${escapeRegex(term)}(?![a-z0-9])`, 'i');
+      if (re.test(matchText)) best = term.length;
+    }
+    if (best > 0) scored.push({ slug, score: best });
+  }
+  scored.sort((a, b) => b.score - a.score || a.slug.localeCompare(b.slug));
+  return scored.slice(0, 3).map((s) => s.slug);
+}
+
+let libraryCount = 0;
+if (fs.existsSync(SRC_LIBRARY)) {
+  const collections = fs
+    .readdirSync(SRC_LIBRARY, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .sort();
+  for (const collection of collections) {
+    const label = LIBRARY_LABELS[collection] || collection;
+    const files = fs.readdirSync(path.join(SRC_LIBRARY, collection)).filter((f) => f.endsWith('.md')).sort();
+    for (const file of files) {
+      const fm = file.match(/^(\d+)_Station(\d+)_([A-Za-z]+)\.md$/);
+      if (!fm) fail(`unrecognised library case filename: ${collection}/${file}`);
+      const encounterNo = parseInt(fm[1], 10);
+      const station = parseInt(fm[2], 10);
+      const specialty = fm[3];
+      const encounterType =
+        specialty === 'Communication' ? 'communication' : specialty === 'Consultation' ? 'consultation' : 'examination';
+
+      const raw = fs.readFileSync(path.join(SRC_LIBRARY, collection, file), 'utf8');
+      const srcLines = raw.split('\n');
+      const h1 = srcLines[0] || '';
+      const firstBlockquote = srcLines.find((l) => l.startsWith('> ')) || '';
+
+      const stem = extractStem(raw);
+      if (stem === null || stem.length === 0) stemFailures.push(`${collection}/${file}`);
+
+      const fallback = FALLBACK_SKILLS[encounterType];
+      const parsedSkills = parseSkillsLine(srcLines[1]);
+      const skills = parsedSkills ?? fallback;
+
+      const canonicalSlugs = matchCanonicalSlugs(h1, firstBlockquote);
+      matchStats[encounterType] = matchStats[encounterType] || { total: 0, matched: 0 };
+      matchStats[encounterType].total++;
+      if (canonicalSlugs.length > 0) matchStats[encounterType].matched++;
+
+      const outName = `LIB_${collection}__${file}`;
+      fs.writeFileSync(path.join(OUT_CASES, outName), raw);
+
+      cases.push({
+        id: `LIB_${collection}__${encounterNo}`,
+        sitting: `LIB_${collection}`,
+        sittingLabel: label,
+        encounterNo,
+        station,
+        specialty,
+        encounterType,
+        skills,
+        timing: TIMING[encounterType],
+        displayTitle: encounterType === 'consultation' ? 'Consultation' : `Station ${station} · ${specialty}`,
+        file: outName,
+        canonicalSlugs,
+      });
+      libraryCount++;
+    }
   }
 }
 
@@ -311,16 +405,19 @@ const manifest = {
   cases,
 };
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 1));
+// Empty carousel slots (forgotten encounters) — NOT served as cases; recorded so a future
+// carousel recreation knows which slot is blank and what type of case to substitute.
+fs.writeFileSync(path.join(OUT, 'placeholders.json'), JSON.stringify(placeholders, null, 1));
 
 // ---------- report ----------
 console.log('=== build-content.mjs report ===');
-console.log(`cases:            ${cases.length} (expected 296)`);
-console.log(`canonical notes:  ${canonicalFiles.length} (expected 156)`);
+console.log(`cases:            ${cases.length} (${carouselCount} carousel + ${libraryCount} library)`);
+console.log(`canonical notes:  ${canonicalFiles.length} (>= 156)`);
 console.log(`kb terms:         ${Object.keys(kbLookup).length}`);
 console.log(`stem failures:    ${stemFailures.length}`);
 if (stemFailures.length) for (const f of stemFailures) console.log(`  MISSING STEM: ${f}`);
-console.log(`placeholder stems injected (no recall slots): ${injectedPlaceholders.length}`);
-for (const f of injectedPlaceholders) console.log(`  injected: ${f}`);
+console.log(`placeholder slots skipped (forgotten by candidates, not served as cases): ${placeholders.length}`);
+for (const p of placeholders) console.log(`  empty slot: ${p.sitting} · enc${p.encounterNo} · ${p.specialty}`);
 console.log(`skills-line mismatches vs fallback (informational): ${skillsMismatches.length}`);
 for (const f of skillsMismatches) console.log(`  ${f}`);
 console.log('canonical match-rate by encounterType:');
@@ -332,7 +429,7 @@ for (const c of [cases.find((c) => c.encounterType === 'examination'), cases.fin
   console.log(JSON.stringify(c));
 }
 
-if (cases.length !== 296) fail(`case count ${cases.length} !== 296`);
-if (canonicalFiles.length !== 156) fail(`canonical count ${canonicalFiles.length} !== 156`);
+if (carouselCount + placeholders.length !== 296) fail(`carousel structure changed: ${carouselCount} served + ${placeholders.length} empty slots !== 296 (the fixed 37-carousel × 8 loop)`);
+if (canonicalFiles.length < 156) fail(`canonical count ${canonicalFiles.length} < 156 (notes may be added but never lost)`);
 if (stemFailures.length > 0) fail(`${stemFailures.length} case file(s) without a non-empty Candidate stem (listed above)`);
 console.log('OK');
