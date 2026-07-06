@@ -169,8 +169,10 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     return classFiltered.filter((c) => (c.theme ? themeSel.has(c.theme) : true));
   }, [classFiltered, themeSel]);
 
-  // By-type groups. Within a group, manifest order is preserved (sorted by
-  // sitting then encounterNo).
+  // By-type groups. Within a group, rows are stable-sorted by the label's
+  // first segment (the hospital, or the bank name) so each source clusters
+  // together A→Z; the stable sort keeps dates chronological within a hospital
+  // (manifest order is sitting-ascending).
   const typeGroups = useMemo<Array<[string, PublicCaseMeta[]]>>(() => {
     if (view !== 'type') return [];
     const map = new Map<string, PublicCaseMeta[]>();
@@ -180,6 +182,8 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
       if (g) g.push(c);
       else map.set(key, [c]);
     }
+    const cluster = (c: PublicCaseMeta) => c.sittingLabel.split(' · ')[0];
+    for (const [, cs] of map) cs.sort((a, b) => cluster(a).localeCompare(cluster(b)));
     const rank = (label: string) => {
       const i = TYPE_GROUP_ORDER.indexOf(label);
       return i === -1 ? TYPE_GROUP_ORDER.length : i;
