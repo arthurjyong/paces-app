@@ -31,16 +31,14 @@ import {
   type ExaminerChatResponse,
   type ExaminerMarkResponse,
   type ExaminerRequest,
-  type Grade,
-  type MarkSheet,
-  type SkillId,
-  type SkillMark,
   type TokenUsage,
 } from '@/lib/types';
 import { ContentError, getCaseMeta } from '@/lib/content';
 import { getDemoApiKey } from '@/lib/demo';
 import { buildSystem } from '@/lib/prompt';
 import { searchKb } from '@/lib/kb';
+import { buildMarkSheet } from '@/lib/marksheet';
+import { devCliEnabled, runCliChat, runCliMark } from '@/lib/devCli';
 
 export const runtime = 'nodejs';
 // Claude calls (especially marking) can run well past Vercel's default function
@@ -271,53 +269,13 @@ async function runMark(
     return { error: 'The examiner did not return a marksheet — try again', status: 502 };
   }
 
-  const input = toolUse.input as {
-    skills?: unknown;
-    overallImpression?: unknown;
-    biggestImprovement?: unknown;
-  };
+  // Validate server-side (shared with the dev CLI bridge): only the case's
+  // marked skills count, each at most once; total/maxTotal are recomputed,
+  // never trusted from the model.
+  const built = buildMarkSheet(toolUse.input, meta);
+  if ('error' in built) return { error: built.error, status: 502 };
 
-  // Validate server-side: only the case's marked skills count, each at most
-  // once; total/maxTotal are recomputed, never trusted from the model.
-  const allowed = new Set<SkillId>(meta.skills);
-  const seen = new Set<SkillId>();
-  const skills: SkillMark[] = [];
-  if (Array.isArray(input.skills)) {
-    for (const raw of input.skills) {
-      if (typeof raw !== 'object' || raw === null) continue;
-      const entry = raw as { skill?: unknown; grade?: unknown; justification?: unknown };
-      const skill = entry.skill as SkillId;
-      if (!allowed.has(skill) || seen.has(skill)) continue;
-      const grade = entry.grade;
-      if (grade !== 0 && grade !== 1 && grade !== 2) continue;
-      seen.add(skill);
-      skills.push({
-        skill,
-        grade: grade as Grade,
-        justification: typeof entry.justification === 'string' ? entry.justification : '',
-      });
-    }
-  }
-  if (skills.length === 0) {
-    return { error: 'The examiner returned an empty marksheet — try again', status: 502 };
-  }
-  if (skills.length !== meta.skills.length) {
-    // Every marked skill must have a graded, justified row — a partial
-    // marksheet would silently zero the missing skills in the total.
-    return { error: 'The examiner returned an incomplete marksheet — try again', status: 502 };
-  }
-
-  const marksheet: MarkSheet = {
-    skills,
-    total: skills.reduce((sum, s) => sum + s.grade, 0),
-    maxTotal: meta.skills.length * 2,
-    overallImpression:
-      typeof input.overallImpression === 'string' ? input.overallImpression : '',
-    biggestImprovement:
-      typeof input.biggestImprovement === 'string' ? input.biggestImprovement : '',
-  };
-
-  return { marksheet, usage };
+  return { marksheet: built, usage };
 }
 
 // ---------------------------------------------------------------------------
@@ -373,12 +331,22 @@ export async function POST(request: Request) {
     // (signed, unexpired, still-whitelisted — see lib/demo.ts) unlocks the
     // server-held demo key, which follows the same never-leaves-the-server
     // rules. No key from either path → the existing 401.
+    //
+    // Dev-only exception: with the local `claude -p` subscription bridge
+    // enabled (NODE_ENV=development + DEV_CLAUDE_CLI=1 — see lib/devCli.ts), a
+    // keyless request is served by the CLI instead. A BYOK key still takes
+    // precedence, so the real API path stays testable locally.
     const byokKey = request.headers.get(API_KEY_HEADER)?.trim();
-    const apiKey = byokKey || (await getDemoApiKey());
-    if (!apiKey) {
-      return jsonError('Missing API key', 401);
+    const useDevCli = !byokKey && devCliEnabled();
+    let apiKey: string | null = null;
+    let usingDemoKey = false;
+    if (!useDevCli) {
+      apiKey = byokKey || (await getDemoApiKey());
+      if (!apiKey) {
+        return jsonError('Missing API key', 401);
+      }
+      usingDemoKey = !byokKey;
     }
-    const usingDemoKey = !byokKey;
 
     const rawMessages = body.messages;
     if (!Array.isArray(rawMessages) || rawMessages.length === 0) {
@@ -395,7 +363,17 @@ export async function POST(request: Request) {
     }
 
     const system = buildSystem(meta);
-    const client = new Anthropic({ apiKey });
+
+    if (useDevCli) {
+      const result =
+        action === 'chat'
+          ? await runCliChat(model, system, rawMessages)
+          : await runCliMark(model, system, rawMessages, meta);
+      if ('error' in result) return jsonError(result.error, result.status);
+      return NextResponse.json(result);
+    }
+
+    const client = new Anthropic({ apiKey: apiKey as string });
 
     try {
       if (action === 'chat') {

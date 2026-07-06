@@ -88,10 +88,15 @@ export default function Home() {
     caseIdRef.current = publicCase?.meta.id ?? null;
   }, [publicCase]);
 
+  // Dev-only `claude -p` subscription bridge (local tuning without an API
+  // key). /api/dev-status 404s in production, so this stays false there.
+  const [cliBridge, setCliBridge] = useState(false);
+
   const demoActive = demoStatus?.active === true;
   // With demo access active, the chat works without a BYOK key (the server
   // holds the demo key behind the signed cookie — it never reaches this client).
-  const hasKey = apiKey.trim().length > 0 || demoActive;
+  // The dev CLI bridge likewise serves keyless requests, dev-only.
+  const hasKey = apiKey.trim().length > 0 || demoActive || cliBridge;
 
   const updateModel = useCallback(
     (value: string) => {
@@ -119,6 +124,26 @@ export default function Home() {
   useEffect(() => {
     void refreshDemoStatus();
   }, [refreshDemoStatus]);
+
+  // Probe the dev-only CLI bridge once on load (best-effort; 404 in prod).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/dev-status');
+        if (!res.ok) return;
+        const data = await readJson(res);
+        if (!cancelled && data && typeof (data as { cliBridge?: unknown }).cliBridge === 'boolean') {
+          setCliBridge((data as { cliBridge: boolean }).cliBridge);
+        }
+      } catch {
+        // ignore — the bridge simply stays off
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // One-shot read of the ?demo= flag appended by /api/demo/verify's redirect,
   // then strip it from the URL so a reload doesn't re-show the notice.
@@ -188,10 +213,10 @@ export default function Home() {
   const runChat = useCallback(
     async (transcript: TranscriptEntry[]) => {
       if (!publicCase) return;
-      // BYOK key takes precedence; with none, a demo session lets the server
-      // use its own key (validated server-side via the httpOnly cookie).
+      // BYOK key takes precedence; with none, a demo session (or the dev-only
+      // CLI bridge) lets the server handle the call without a client key.
       const key = apiKey.trim();
-      if (!key && !demoActive) {
+      if (!key && !demoActive && !cliBridge) {
         setError(NO_KEY_ERROR);
         return;
       }
@@ -211,7 +236,7 @@ export default function Home() {
           body: JSON.stringify(body),
         });
         const data = await readJson(res);
-        if (res.status === 401 && !key) {
+        if (res.status === 401 && !key && !cliBridge) {
           // Keyless request means we relied on the demo session, so a 401 is
           // expiry/revocation — the server's "Missing API key" would send a
           // keyless invited user hunting for a key. Re-sync the sidebar too.
@@ -237,7 +262,7 @@ export default function Home() {
         setPending(null);
       }
     },
-    [publicCase, apiKey, demoActive, model, refreshDemoStatus],
+    [publicCase, apiKey, demoActive, cliBridge, model, refreshDemoStatus],
   );
 
   const send = useCallback(
@@ -266,7 +291,7 @@ export default function Home() {
   const mark = useCallback(async () => {
     if (!publicCase || pending || caseLoading || entries.length === 0) return;
     const key = apiKey.trim();
-    if (!key && !demoActive) {
+    if (!key && !demoActive && !cliBridge) {
       setError(NO_KEY_ERROR);
       return;
     }
@@ -285,7 +310,7 @@ export default function Home() {
         body: JSON.stringify(body),
       });
       const data = await readJson(res);
-      if (res.status === 401 && !key) {
+      if (res.status === 401 && !key && !cliBridge) {
         // See runChat: keyless 401 = demo session expired/revoked.
         void refreshDemoStatus();
         throw new Error(SESSION_EXPIRED_ERROR);
@@ -299,7 +324,7 @@ export default function Home() {
     } finally {
       setPending(null);
     }
-  }, [publicCase, pending, caseLoading, entries, apiKey, demoActive, model, refreshDemoStatus]);
+  }, [publicCase, pending, caseLoading, entries, apiKey, demoActive, cliBridge, model, refreshDemoStatus]);
 
   const newCase = useCallback(() => {
     if (pending) return;
@@ -357,7 +382,11 @@ export default function Home() {
         <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <h1 className="text-base font-semibold tracking-tight">PACES Practice</h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {demoActive ? 'AI examiner · invited access active' : 'AI examiner for MRCP PACES'}
+            {demoActive
+              ? 'AI examiner · invited access active'
+              : cliBridge && !apiKey.trim()
+                ? 'AI examiner · dev bridge (subscription quota)'
+                : 'AI examiner for MRCP PACES'}
           </p>
         </div>
         {/* Invited access sits above Settings: an invited consultant's first

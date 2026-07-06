@@ -34,6 +34,7 @@ Any future enrichment/generation MUST emit stems in this format — the runtime 
 4. **`search_kb` results stay server-side.** The chat response exposes only `kbLookups` (a count). Queries and matched slugs would leak the diagnosis.
 5. **Dry-run mode** (`POST /api/examiner?dryRun=1`, returns assembled system blocks without calling Anthropic) must be gated to `process.env.NODE_ENV === 'development'` — return 404 otherwise.
 6. **The server-held demo key never reaches the client** and is only ever used server-side behind a valid signed demo session — see the "Demo access" section below for the gate's own invariants.
+7. **The dev CLI bridge is dev-only** (`lib/devCli.ts`, added 2026-07-08): with `NODE_ENV === 'development'` AND `DEV_CLAUDE_CLI=1`, a keyless `/api/examiner` request is served by shelling out to the local `claude -p` CLI (headless Claude Code — burns the developer's claude.ai subscription quota instead of API credits, for local tuning). Both conditions must hold; production never takes this path. A BYOK key always takes precedence (keeps the real API path testable). `GET /api/dev-status` (the client's probe for this mode) must 404 outside development. Marking in bridge mode uses plain-JSON output validated by the same shared `lib/marksheet.ts` rules as the tool-use path; final validation of examiner behaviour must still run through the real API path.
 
 ## File ownership (agents work ONLY in their own files)
 
