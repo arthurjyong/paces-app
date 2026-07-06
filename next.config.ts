@@ -10,7 +10,10 @@ const nextConfig: NextConfig = {
     // Stamped at build time and shown in the sidebar footer, so anyone can
     // tell at a glance whether their browser is running the latest deploy
     // (stale mobile tabs kept serving pre-autosave code invisibly).
-    NEXT_PUBLIC_BUILD_STAMP: new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC",
+    // GMT+8 (Singapore) — the audience is SG-based; a UTC stamp read a day
+    // "behind" during late-night sessions and looked stale.
+    NEXT_PUBLIC_BUILD_STAMP:
+      new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 16).replace("T", " ") + " GMT+8",
   },
 };
 
