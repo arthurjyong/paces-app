@@ -18,6 +18,12 @@
 # every answer key). Regenerate at deploy time instead.
 /content/
 
+# clinical-image assets copied in by build-content.mjs from ../_index/case_images.json.
+# INTERIM: extracts from third-party study PDFs — kept out of git (uploaded from
+# local disk at deploy, like content/). Swap to open-licensed images before this
+# is committed anywhere public.
+/public/case-images/
+
 # next.js
 /.next/
 /out/

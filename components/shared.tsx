@@ -4,7 +4,7 @@
 // Skill names, transcript entry shape, token formatting, tiny badge + minimal-markdown renderers.
 
 import { useCallback, useSyncExternalStore, type ReactNode } from 'react';
-import type { SkillId, TokenUsage } from '@/lib/types';
+import type { RevealedImage, SkillId, TokenUsage } from '@/lib/types';
 
 /** Official MRCP PACES skill names, keyed by skill letter. */
 export const SKILL_NAMES: Record<SkillId, string> = {
@@ -29,6 +29,8 @@ export interface TranscriptEntry {
   content: string;
   usage?: TokenUsage;
   kbLookups?: number;
+  /** photos the examiner revealed on this turn (assistant turns only) */
+  images?: RevealedImage[];
 }
 
 // --- localStorage-backed string state (SSR-safe, works without an effect) ---

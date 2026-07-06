@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "PACES Practice — AI examiner",
   description: "PACES Practice — AI examiner",
+  // Pre-launch (audience of one) AND the interim build carries third-party
+  // clinical images — keep it out of search indexes until images are swapped to
+  // open-licensed sources. Remove once the app is intended to be discoverable.
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({

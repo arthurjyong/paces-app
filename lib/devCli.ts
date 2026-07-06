@@ -22,6 +22,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import type {
+  CaseImage,
   CaseMeta,
   ChatMessage,
   ExaminerChatResponse,
@@ -29,6 +30,7 @@ import type {
   TokenUsage,
 } from './types';
 import { buildMarkSheet } from './marksheet';
+import { extractRevealedImages } from './images';
 
 const execFileAsync = promisify(execFile);
 
@@ -156,15 +158,17 @@ async function runCli(
 export async function runCliChat(
   model: string,
   system: TextBlockParam[],
-  transcript: ChatMessage[]
+  transcript: ChatMessage[],
+  images: CaseImage[]
 ): Promise<ExaminerChatResponse | { error: string; status: number }> {
   const result = await runCli(model, joinSystem(system), serializeTranscript(transcript));
   if ('error' in result) return result;
-  const reply = result.text.trim();
+  // Same {{IMG:id}} reveal handling as the Anthropic path (findings-gated).
+  const { text: reply, images: revealed } = extractRevealedImages(result.text.trim(), images);
   if (!reply) {
     return { error: 'The examiner returned no reply — try again', status: 502 };
   }
-  return { reply, kbLookups: 0, usage: result.usage };
+  return { reply, kbLookups: 0, usage: result.usage, images: revealed.length ? revealed : undefined };
 }
 
 /** Pull the outermost JSON object out of a possibly fenced / prefixed reply. */

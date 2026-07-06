@@ -251,7 +251,13 @@ export default function Home() {
         if (!chat.reply) return; // defence in depth: never store an empty assistant turn
         setEntries((cur) => [
           ...cur,
-          { role: 'assistant', content: chat.reply, usage: chat.usage, kbLookups: chat.kbLookups },
+          {
+            role: 'assistant',
+            content: chat.reply,
+            usage: chat.usage,
+            kbLookups: chat.kbLookups,
+            images: chat.images,
+          },
         ]);
       } catch (e) {
         // Transcript is preserved; the error notice offers a retry.

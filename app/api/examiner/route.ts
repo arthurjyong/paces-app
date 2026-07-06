@@ -26,6 +26,7 @@ import {
   DEFAULT_MODEL,
   MODEL_ALLOWLIST,
   type ApiError,
+  type CaseImage,
   type CaseMeta,
   type ChatMessage,
   type ExaminerChatResponse,
@@ -33,11 +34,12 @@ import {
   type ExaminerRequest,
   type TokenUsage,
 } from '@/lib/types';
-import { ContentError, getCaseMeta } from '@/lib/content';
+import { ContentError, getCaseImages, getCaseMeta } from '@/lib/content';
 import { getDemoApiKey } from '@/lib/demo';
 import { buildSystem } from '@/lib/prompt';
 import { searchKb } from '@/lib/kb';
 import { buildMarkSheet } from '@/lib/marksheet';
+import { extractRevealedImages } from '@/lib/images';
 import { devCliEnabled, runCliChat, runCliMark } from '@/lib/devCli';
 
 export const runtime = 'nodejs';
@@ -174,7 +176,8 @@ async function runChat(
   client: Anthropic,
   model: string,
   system: TextBlockParam[],
-  transcript: ChatMessage[]
+  transcript: ChatMessage[],
+  images: CaseImage[]
 ): Promise<ExaminerChatResponse | { error: string; status: number }> {
   const messages: MessageParam[] = transcript.map((m) => ({ role: m.role, content: m.content }));
   const usage = emptyUsage();
@@ -222,7 +225,11 @@ async function runChat(
     }
   }
 
-  const reply = textParts.join('\n\n').trim();
+  const raw = textParts.join('\n\n').trim();
+  // Resolve any {{IMG:id}} markers into revealed photos and strip them from the
+  // shown text. Runs before the empty check so a marker-only reply still counts
+  // as empty (nothing for the candidate to read).
+  const { text: reply, images: revealed } = extractRevealedImages(raw, images);
   if (!reply) {
     // Tool-loop exhaustion or a max_tokens cut inside a tool_use block can end
     // with no text at all. A 200 with an empty reply would be stored in the
@@ -231,7 +238,7 @@ async function runChat(
     // runMark, so the client keeps the transcript and offers a retry.
     return { error: 'The examiner returned no reply — try again', status: 502 };
   }
-  return { reply, kbLookups, usage };
+  return { reply, kbLookups, usage, images: revealed.length ? revealed : undefined };
 }
 
 async function runMark(
@@ -317,10 +324,14 @@ export async function POST(request: Request) {
       return jsonError('Model not allowed', 400);
     }
 
+    // Photos available for this case (server-side map, keyed by caseCode). Only
+    // sign-level captions + urls ever reach the client, and only via a reveal.
+    const caseImages = getCaseImages(meta.caseCode);
+
     // Dev-only dry run: return the assembled system blocks without calling
     // Anthropic (no API key required — no upstream call is made).
     if (wantsDryRun) {
-      const systemBlocks = buildSystem(meta);
+      const systemBlocks = buildSystem(meta, caseImages);
       const toolNames = action === 'mark' ? ['submit_marksheet'] : ['search_kb'];
       return NextResponse.json({ systemBlocks, toolNames });
     }
@@ -362,12 +373,12 @@ export async function POST(request: Request) {
       return jsonError(`Each message must be at most ${MAX_MESSAGE_CHARS} characters`, 400);
     }
 
-    const system = buildSystem(meta);
+    const system = buildSystem(meta, caseImages);
 
     if (useDevCli) {
       const result =
         action === 'chat'
-          ? await runCliChat(model, system, rawMessages)
+          ? await runCliChat(model, system, rawMessages, caseImages)
           : await runCliMark(model, system, rawMessages, meta);
       if ('error' in result) return jsonError(result.error, result.status);
       return NextResponse.json(result);
@@ -377,7 +388,7 @@ export async function POST(request: Request) {
 
     try {
       if (action === 'chat') {
-        const result = await runChat(client, model, system, rawMessages);
+        const result = await runChat(client, model, system, rawMessages, caseImages);
         if ('error' in result) return jsonError(result.error, result.status);
         return NextResponse.json(result);
       }

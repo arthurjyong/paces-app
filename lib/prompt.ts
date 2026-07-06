@@ -3,8 +3,9 @@
 // path (invariant 1).
 
 import type { TextBlockParam } from '@anthropic-ai/sdk/resources/messages';
-import type { CaseMeta } from './types';
+import type { CaseImage, CaseMeta } from './types';
 import { getCanonicalNote, getCaseFull, getRubric } from './content';
+import { buildImageSection } from './images';
 
 /** Cap on the per-case block; grounding notes are truncated first, never the case file. */
 const BLOCK2_MAX_CHARS = 150_000;
@@ -37,14 +38,17 @@ function buildBlock1(): string {
   return block1Cache;
 }
 
-/** Block 2: encounter header + full case file + grounding notes (capped). */
-function buildBlock2(meta: CaseMeta): string {
+/** Block 2: encounter header + full case file + grounding notes (capped) + image list. */
+function buildBlock2(meta: CaseMeta, images: CaseImage[]): string {
   const header = `ENCOUNTER: ${meta.displayTitle} · ${meta.sittingLabel} · type=${meta.encounterType} · skills=${meta.skills.join('·')} · timing=${meta.timing}`;
   const caseSection = `# CASE FILE (hidden from candidate — the candidate has seen ONLY the "Candidate stem" section)\n\n${getCaseFull(meta.id)}`;
 
   // The header + case file are never truncated.
   let block = `${header}\n\n${caseSection}`;
-  let budget = BLOCK2_MAX_CHARS - block.length;
+  // Reserve room for the image section (small) so a huge grounding note can't crowd it out.
+  const imageSection = buildImageSection(images);
+  const reserve = imageSection ? imageSection.length + 4 : 0;
+  let budget = BLOCK2_MAX_CHARS - block.length - reserve;
 
   for (const slug of meta.canonicalSlugs) {
     const note = getCanonicalNote(slug);
@@ -62,17 +66,18 @@ function buildBlock2(meta: CaseMeta): string {
       break;
     }
   }
+  if (imageSection) block += `\n\n${imageSection}`;
   return block;
 }
 
 /**
  * The two system blocks for an encounter, each a prompt-cache breakpoint:
  * block 1 (persona + rubric) is byte-identical across all cases; block 2 is
- * per-case.
+ * per-case (case file + grounding + any available clinical photos).
  */
-export function buildSystem(meta: CaseMeta): TextBlockParam[] {
+export function buildSystem(meta: CaseMeta, images: CaseImage[] = []): TextBlockParam[] {
   return [
     { type: 'text', text: buildBlock1(), cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: buildBlock2(meta), cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: buildBlock2(meta, images), cache_control: { type: 'ephemeral' } },
   ];
 }

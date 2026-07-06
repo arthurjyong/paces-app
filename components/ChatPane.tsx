@@ -186,6 +186,27 @@ export default function ChatPane({
                 <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-zinc-200 bg-white px-3.5 py-2 text-sm leading-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
                   <RichText text={entry.content} />
                 </div>
+                {entry.images && entry.images.length > 0 && (
+                  <div className="mt-2 flex max-w-[85%] flex-wrap gap-2">
+                    {entry.images.map((img, k) => (
+                      <figure
+                        key={k}
+                        className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={img.url}
+                          alt={img.caption}
+                          loading="lazy"
+                          className="max-h-72 w-auto max-w-full object-contain"
+                        />
+                        <figcaption className="border-t border-zinc-100 px-2.5 py-1.5 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                          {img.caption}
+                        </figcaption>
+                      </figure>
+                    ))}
+                  </div>
+                )}
                 {entry.usage && (
                   <p className="mt-1 pl-1 text-[11px] text-zinc-400 dark:text-zinc-500">
                     {usageLine(entry.usage, entry.kbLookups)}

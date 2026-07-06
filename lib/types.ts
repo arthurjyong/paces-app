@@ -90,11 +90,35 @@ export interface TokenUsage {
   cacheWriteTokens: number;
 }
 
+/**
+ * Server-side clinical-image record for one case (from content/case_images.json,
+ * keyed by caseCode). The `id`/`region` are examiner-facing only; only a
+ * RevealedImage (url + caption) may reach the client, and only via a chat reveal.
+ */
+export interface CaseImage {
+  /** opaque marker id the examiner emits, e.g. "im01" (carries no diagnosis) */
+  id: string;
+  /** public asset URL, e.g. "/case-images/im01.jpeg" */
+  url: string;
+  /** SIGN-level caption (spoiler-safe — describes the finding, not the diagnosis) */
+  caption: string;
+  /** examination region that unlocks it (hands, fundus, …) */
+  region: string;
+}
+
+/** A clinical photo revealed to the candidate mid-encounter (client-safe subset of CaseImage). */
+export interface RevealedImage {
+  url: string;
+  caption: string;
+}
+
 export interface ExaminerChatResponse {
   reply: string;
   /** count only — never echo kb queries or matched slugs to the client (spoiler risk) */
   kbLookups: number;
   usage: TokenUsage;
+  /** photos the examiner revealed this turn (findings-gated; empty/omitted if none) */
+  images?: RevealedImage[];
 }
 
 export interface SkillMark {

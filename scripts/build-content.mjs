@@ -511,8 +511,47 @@ fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest, null,
 // carousel recreation knows which slot is blank and what type of case to substitute.
 fs.writeFileSync(path.join(OUT, 'placeholders.json'), JSON.stringify(placeholders, null, 1));
 
+// ---------- clinical images (INTERIM extracts; see ../_index/case_images.json) ----------
+// Maps served cases to real clinical photos, revealed IN-CHAT only after the candidate
+// examines the region (never on the stem). Source images are copied into the served-but-
+// gitignored public/case-images/ dir (uploaded from local disk at deploy, like content/).
+// The case↔image mapping stays server-side in content/case_images.json (keyed by caseCode);
+// only URL + sign-level caption ever reach the client, and only via an examiner reveal.
+const SRC_CASE_IMAGES = path.join(CORPUS_ROOT, '_index', 'case_images.json');
+const PUBLIC_IMG_DIR = path.join(APP_ROOT, 'public', 'case-images');
+let caseImageAssets = 0;
+let caseImageLinks = 0;
+const caseImagesByCode = {};
+if (fs.existsSync(SRC_CASE_IMAGES)) {
+  const servedCodes = new Set(cases.map((c) => c.caseCode));
+  const spec = JSON.parse(fs.readFileSync(SRC_CASE_IMAGES, 'utf8'));
+  // Repopulate the asset dir from scratch each run (idempotent; drops removed images).
+  fs.rmSync(PUBLIC_IMG_DIR, { recursive: true, force: true });
+  fs.mkdirSync(PUBLIC_IMG_DIR, { recursive: true });
+  for (const img of spec.images ?? []) {
+    const src = path.join(CORPUS_ROOT, img.sourceFile);
+    if (!fs.existsSync(src)) {
+      console.warn(`  MISSING IMAGE SOURCE: ${img.sourceFile}`);
+      continue;
+    }
+    const links = (img.cases ?? []).filter((l) => servedCodes.has(l.caseCode));
+    if (links.length === 0) continue; // no served case wants it — don't ship the asset
+    fs.copyFileSync(src, path.join(PUBLIC_IMG_DIR, img.asset));
+    caseImageAssets++;
+    const entry = { id: img.id, url: `/case-images/${img.asset}`, caption: img.caption, region: img.triggerRegion };
+    for (const l of links) {
+      if (!caseImagesByCode[l.caseCode]) caseImagesByCode[l.caseCode] = [];
+      caseImagesByCode[l.caseCode].push(entry);
+      caseImageLinks++;
+    }
+  }
+}
+// Always emit the sidecar (possibly empty) so the loader has a stable shape.
+fs.writeFileSync(path.join(OUT, 'case_images.json'), JSON.stringify(caseImagesByCode, null, 1));
+
 // ---------- report ----------
 console.log('=== build-content.mjs report ===');
+console.log(`clinical images:  ${caseImageAssets} assets → ${caseImageLinks} case links (${Object.keys(caseImagesByCode).length} cases)`);
 console.log(`cases:            ${cases.length} (${carouselCount} carousel + ${libraryCount} library)`);
 console.log(`canonical notes:  ${canonicalFiles.length} (>= 156)`);
 console.log(`kb terms:         ${Object.keys(kbLookup).length}`);
