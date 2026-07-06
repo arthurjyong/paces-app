@@ -39,3 +39,7 @@ Flow for the invited user: open the app → sidebar **Invited access** → enter
 - **Model picker** — Sonnet 4.6 by default; Opus 4.8 and Haiku 4.5 selectable. Cost is the user's dial; retrieval quality, not model size, does the heavy lifting.
 
 `SPEC.md` is the binding design contract (security invariants, prompt text, API shapes). Deployable to Vercel as-is (`outputFileTracingIncludes` bundles `content/` into the serverless functions — run the content build before deploying).
+
+## License & what this repo does (and doesn't) contain
+
+MIT — see `LICENSE`. This repository is the **app only**: engine, UI, content pipeline, and design contract. The clinical case corpus it grounds on is **not** in the repo and never has been — `content/` is generated locally by `scripts/build-content.mjs` from a private source corpus (parent directory) and is gitignored, along with the clinical photos (`public/case-images/`) and all env files. To run your own instance you bring your own case bank in the format `build-content.mjs` expects (or adapt the script), then deploy from your machine with `npx vercel deploy` so your local `content/` uploads with it.

@@ -477,6 +477,11 @@ export default function Home() {
           selectedId={publicCase?.meta.id ?? null}
           onSelect={(id) => void selectCase(id)}
         />
+        {/* Build stamp: the quick answer to "is my browser on the latest deploy?"
+            (stale mobile tabs kept running pre-autosave code invisibly). */}
+        <p className="border-t border-zinc-200 px-4 py-1.5 text-[10px] text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
+          build {process.env.NEXT_PUBLIC_BUILD_STAMP}
+        </p>
       </aside>
 
       {/* Main pane */}
