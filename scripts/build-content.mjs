@@ -117,12 +117,35 @@ function stripSpoilerNotes(body) {
 }
 
 // Presentation normalization for the near-plain-text stem card: unwrap
-// blockquote markers, drop horizontal-rule lines. Mirrors lib/content.ts.
+// blockquote markers, drop horizontal-rule lines, and strip retired-format
+// ENCOUNTER-TIMING sentences (the card header shows the authoritative timing).
+// Mirrors lib/content.ts — keep IDENTICAL.
+const TIMING_MARK = /\b\d+\s*(?:\*\*\s*)?min(?:ute)?s?\b|warning bell/i;
+const TIMING_CUE =
+  /\byou (?:will )?have\b|warning bell|of questions?|\bexaminers?\b|min(?:ute)?s?\s+reading|gather your thoughts|reflection|then discussion|examination, then|warned|stop(?:ped|s)?\s+(?:you\s+)?at|alerts?\s+you/i;
+const isTimingText = (s) => TIMING_MARK.test(s) && TIMING_CUE.test(s);
+let timingSentencesStripped = 0;
+
+function stripTimingFormat(line) {
+  const noParens = line.replace(/\s*\*?\(([^)]*)\)\*?/g, (m, inner) => {
+    if (isTimingText(inner)) { timingSentencesStripped++; return ''; }
+    return m;
+  });
+  const sentences = noParens.match(/[^.!?]*[.!?]+["')\]*]*\s*|[^.!?]+$/g);
+  if (!sentences) return noParens;
+  const kept = sentences.filter((s) => {
+    if (isTimingText(s)) { timingSentencesStripped++; return false; }
+    return true;
+  });
+  return kept.join('').replace(/[ \t]{2,}/g, ' ');
+}
+
 function presentStemLines(lines) {
   const out = [];
   for (const raw of lines) {
-    const line = raw.replace(/^\s*(?:>\s*)+/, '');
+    let line = raw.replace(/^\s*(?:>\s*)+/, '');
     if (/^\s*(-{3,}|_{3,}|\*{3,})\s*$/.test(line)) continue;
+    line = stripTimingFormat(line);
     out.push(line);
   }
   return out;
@@ -515,4 +538,5 @@ if (stemFailures.length > 0) fail(`${stemFailures.length} case file(s) without a
 // cases to one code, silently breaking the "unique, referable" case-ID contract.
 if (new Set(cases.map((c) => c.caseCode)).size !== cases.length) fail('duplicate caseCode values — check _index/case_ids.json for a bad key migration');
 console.log(`spoiler notes stripped from served stems: ${spoilerNotesStripped}`);
+console.log(`retired-format timing sentences stripped: ${timingSentencesStripped}`);
 console.log('OK');

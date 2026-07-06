@@ -200,14 +200,37 @@ function stripSpoilerNotes(body: string[]): string[] {
 /**
  * The stem card renders near-plain text (no markdown engine), so source
  * formatting artifacts must not reach it: unwrap blockquote markers ("> ")
- * and drop horizontal-rule separator lines ("---"). Mirrored in
- * scripts/build-content.mjs so build validation sees the served text.
+ * and drop horizontal-rule separator lines ("---"). Old source material also
+ * embeds ENCOUNTER-TIMING sentences from retired formats ("You have 8 minutes
+ * with the patient…", "A warning bell sounds at 6 minutes.") that contradict
+ * the authoritative per-classification timing shown in the card header —
+ * strip those sentence-by-sentence. A sentence goes only if it carries BOTH a
+ * timing mark (N minutes / warning bell) AND a format cue, so clinical
+ * durations ("chest pain for 30 minutes", "pulse 112/min") survive.
+ * Mirrored in scripts/build-content.mjs so build validation sees the served text.
  */
+const TIMING_MARK = /\b\d+\s*(?:\*\*\s*)?min(?:ute)?s?\b|warning bell/i;
+const TIMING_CUE =
+  /\byou (?:will )?have\b|warning bell|of questions?|\bexaminers?\b|min(?:ute)?s?\s+reading|gather your thoughts|reflection|then discussion|examination, then|warned|stop(?:ped|s)?\s+(?:you\s+)?at|alerts?\s+you/i;
+const isTimingText = (s: string) => TIMING_MARK.test(s) && TIMING_CUE.test(s);
+
+function stripTimingFormat(line: string): string {
+  // Parentheticals first — bullet labels like "Your task (10 minutes …; stopped at 8):"
+  const noParens = line.replace(/\s*\*?\(([^)]*)\)\*?/g, (m, inner: string) => (isTimingText(inner) ? '' : m));
+  const sentences = noParens.match(/[^.!?]*[.!?]+["')\]*]*\s*|[^.!?]+$/g);
+  if (!sentences) return noParens;
+  return sentences
+    .filter((s) => !isTimingText(s))
+    .join('')
+    .replace(/[ \t]{2,}/g, ' ');
+}
+
 function presentStemLines(lines: string[]): string[] {
   const out: string[] = [];
   for (const raw of lines) {
-    const line = raw.replace(/^\s*(?:>\s*)+/, '');
+    let line = raw.replace(/^\s*(?:>\s*)+/, '');
     if (/^\s*(-{3,}|_{3,}|\*{3,})\s*$/.test(line)) continue;
+    line = stripTimingFormat(line);
     out.push(line);
   }
   return out;
