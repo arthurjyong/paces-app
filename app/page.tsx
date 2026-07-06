@@ -6,7 +6,14 @@
 // and POST /api/examiner, per lib/types.ts.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { BEGIN_MESSAGE, useLocalStorage, type TranscriptEntry } from '@/components/shared';
+import {
+  BEGIN_MESSAGE,
+  clearSavedEncounter,
+  loadSavedEncounter,
+  saveEncounter,
+  useLocalStorage,
+  type TranscriptEntry,
+} from '@/components/shared';
 import {
   API_KEY_HEADER,
   DEFAULT_MODEL,
@@ -63,7 +70,8 @@ export default function Home() {
   const [publicCase, setPublicCase] = useState<PublicCase | null>(null);
   const [caseLoading, setCaseLoading] = useState(false);
 
-  // Encounter state (React only — no persistence).
+  // Encounter state (autosaved to localStorage so a reload can't wipe it — see
+  // the restore + autosave effects below; backend stays stateless).
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [pending, setPending] = useState<'chat' | 'mark' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,6 +95,12 @@ export default function Home() {
   useEffect(() => {
     caseIdRef.current = publicCase?.meta.id ?? null;
   }, [publicCase]);
+
+  // Crash-safe autosave gating: restore runs once (after the manifest arrives),
+  // and autosave stays off until that attempt finishes — otherwise the initial
+  // empty state would clobber the saved encounter before it could be read.
+  const restoreAttemptedRef = useRef(false);
+  const autosaveEnabledRef = useRef(false);
 
   // Dev-only `claude -p` subscription bridge (local tuning without an API
   // key). /api/dev-status 404s in production, so this stays false there.
@@ -178,6 +192,57 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  // Restore the autosaved encounter once the manifest is in — synchronous (the
+  // blob carries the stem, meta comes fresh from the manifest), so there is no
+  // failure path that could strand or destroy a saved encounter. The saved case
+  // id must still exist (content redeploys can rename/remove cases). Runs once;
+  // the ref also guards React StrictMode's dev double-invoke.
+  useEffect(() => {
+    if (!manifest || restoreAttemptedRef.current) return;
+    restoreAttemptedRef.current = true;
+    const saved = loadSavedEncounter();
+    const meta = saved ? manifest.cases.find((c) => c.id === saved.caseId) : undefined;
+    if (!saved || !meta) {
+      // Drop stale (case gone) and unreadable blobs alike — removeItem on an
+      // empty slot is a no-op.
+      clearSavedEncounter();
+      autosaveEnabledRef.current = true;
+      return;
+    }
+    setPublicCase({ meta, stem: saved.stem });
+    setEntries(saved.entries);
+    setMarksheet(saved.marksheet);
+    setMarkUsage(saved.markUsage);
+    const last = saved.entries[saved.entries.length - 1];
+    if (last && last.role === 'user' && !saved.marksheet) {
+      // Reloaded mid-reply: the transcript ends with an unanswered user turn.
+      // Surfacing it as an error lights up the existing Retry path. (With a
+      // marksheet already landed the encounter is effectively over — no nag.)
+      setError(
+        last.content === BEGIN_MESSAGE
+          ? 'Encounter restored — it had not yet begun when the page reloaded. Press Retry to open it.'
+          : 'Encounter restored — the examiner had not yet replied to your last message. Press Retry to resend it.',
+      );
+    }
+    autosaveEnabledRef.current = true;
+  }, [manifest]);
+
+  // Autosave the live encounter on every change (case id + stem + transcript
+  // incl. revealed images + marksheet). The API key is NOT part of this blob —
+  // it stays in its own localStorage slot.
+  useEffect(() => {
+    if (!autosaveEnabledRef.current || !publicCase) return;
+    saveEncounter({
+      v: 1,
+      caseId: publicCase.meta.id,
+      stem: publicCase.stem,
+      entries,
+      marksheet,
+      markUsage,
+      savedAt: new Date().toISOString(),
+    });
+  }, [publicCase, entries, marksheet, markUsage]);
 
   const selectCase = useCallback(
     async (id: string) => {
@@ -335,6 +400,7 @@ export default function Home() {
   const newCase = useCallback(() => {
     if (pending) return;
     if (!window.confirm('End this encounter and choose a new case? The transcript will be discarded.')) return;
+    clearSavedEncounter();
     setPublicCase(null);
     setEntries([]);
     setMarksheet(null);

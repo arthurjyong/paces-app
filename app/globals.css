@@ -24,6 +24,13 @@ html {
   color-scheme: light dark;
 }
 
+html,
+body {
+  /* A hard downward drag at the top must never become pull-to-refresh: a mid-encounter
+     reload used to wipe the transcript (now also autosaved, belt and braces). */
+  overscroll-behavior-y: contain;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

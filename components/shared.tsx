@@ -4,7 +4,7 @@
 // Skill names, transcript entry shape, token formatting, tiny badge + minimal-markdown renderers.
 
 import { useCallback, useSyncExternalStore, type ReactNode } from 'react';
-import type { RevealedImage, SkillId, TokenUsage } from '@/lib/types';
+import type { MarkSheet, RevealedImage, SkillId, TokenUsage } from '@/lib/types';
 
 /** Official MRCP PACES skill names, keyed by skill letter. */
 export const SKILL_NAMES: Record<SkillId, string> = {
@@ -80,6 +80,138 @@ export function useLocalStorage(key: string, fallback: string): [string, (value:
     [key],
   );
   return [value, setValue];
+}
+
+// --- Crash-safe encounter autosave (versioned localStorage blob) ---
+
+const LS_ENCOUNTER = 'paces.encounter';
+
+/**
+ * Snapshot of the live encounter, autosaved on every change so a reload
+ * (accidental pull-to-refresh, crash) can restore it. Carries the stem so
+ * restore needs no network fetch; meta is rebuilt fresh from the manifest.
+ * The API key lives in its own slot (`paces.apiKey`) and must NEVER be
+ * folded into this blob.
+ */
+export interface SavedEncounter {
+  v: 1;
+  caseId: string;
+  /** the stem as served when the encounter ran */
+  stem: string;
+  entries: TranscriptEntry[];
+  marksheet: MarkSheet | null;
+  markUsage: TokenUsage | null;
+  savedAt: string;
+}
+
+function isTokenUsage(x: unknown): x is TokenUsage {
+  if (!x || typeof x !== 'object') return false;
+  const u = x as TokenUsage;
+  return [u.inputTokens, u.outputTokens, u.cacheReadTokens, u.cacheWriteTokens].every(
+    (n) => typeof n === 'number' && Number.isFinite(n),
+  );
+}
+
+/** Every rendered field must be render-safe: MarksheetCard indexes GRADE meta by grade and sorts on skill. */
+function isMarkSheet(x: unknown): x is MarkSheet {
+  if (!x || typeof x !== 'object') return false;
+  const s = x as MarkSheet;
+  return (
+    Array.isArray(s.skills) &&
+    s.skills.every(
+      (m) =>
+        m !== null &&
+        typeof m === 'object' &&
+        typeof m.skill === 'string' &&
+        m.skill in SKILL_NAMES &&
+        (m.grade === 0 || m.grade === 1 || m.grade === 2) &&
+        typeof m.justification === 'string',
+    ) &&
+    typeof s.total === 'number' &&
+    typeof s.maxTotal === 'number' &&
+    typeof s.overallImpression === 'string' &&
+    typeof s.biggestImprovement === 'string'
+  );
+}
+
+/**
+ * Rebuild one transcript entry from untrusted JSON, or null if the turn itself
+ * (role/content) is unusable. Malformed optional display fields are dropped
+ * rather than sinking the transcript; image URLs must be same-origin relative.
+ */
+function sanitizeEntry(x: unknown): TranscriptEntry | null {
+  if (!x || typeof x !== 'object') return null;
+  const e = x as TranscriptEntry;
+  if ((e.role !== 'user' && e.role !== 'assistant') || typeof e.content !== 'string') return null;
+  const out: TranscriptEntry = { role: e.role, content: e.content };
+  if (isTokenUsage(e.usage)) out.usage = e.usage;
+  if (typeof e.kbLookups === 'number' && Number.isFinite(e.kbLookups)) out.kbLookups = e.kbLookups;
+  if (Array.isArray(e.images)) {
+    const images = e.images
+      .filter(
+        (im): im is RevealedImage =>
+          !!im &&
+          typeof im === 'object' &&
+          typeof im.url === 'string' &&
+          im.url.startsWith('/') &&
+          !im.url.startsWith('//') &&
+          typeof im.caption === 'string',
+      )
+      .map((im) => ({ url: im.url, caption: im.caption }));
+    if (images.length > 0) out.images = images;
+  }
+  return out;
+}
+
+/**
+ * Parse + validate the saved encounter; a malformed/foreign blob reads as
+ * "nothing saved". A marksheet/markUsage that fails validation (e.g. schema
+ * drift across deploys) is nulled rather than sinking the transcript; a broken
+ * transcript turn rejects the whole blob (the conversation can't be trusted).
+ */
+export function loadSavedEncounter(): SavedEncounter | null {
+  try {
+    const raw = window.localStorage.getItem(LS_ENCOUNTER);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as SavedEncounter;
+    if (!p || typeof p !== 'object' || p.v !== 1) return null;
+    if (typeof p.caseId !== 'string' || p.caseId.length === 0) return null;
+    if (typeof p.stem !== 'string' || p.stem.length === 0) return null;
+    if (!Array.isArray(p.entries)) return null;
+    const entries: TranscriptEntry[] = [];
+    for (const e of p.entries) {
+      const clean = sanitizeEntry(e);
+      if (!clean) return null;
+      entries.push(clean);
+    }
+    return {
+      v: 1,
+      caseId: p.caseId,
+      stem: p.stem,
+      entries,
+      marksheet: isMarkSheet(p.marksheet) ? p.marksheet : null,
+      markUsage: isTokenUsage(p.markUsage) ? p.markUsage : null,
+      savedAt: typeof p.savedAt === 'string' ? p.savedAt : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function saveEncounter(snapshot: SavedEncounter): void {
+  try {
+    window.localStorage.setItem(LS_ENCOUNTER, JSON.stringify(snapshot));
+  } catch {
+    // quota exceeded / private mode — autosave is best-effort
+  }
+}
+
+export function clearSavedEncounter(): void {
+  try {
+    window.localStorage.removeItem(LS_ENCOUNTER);
+  } catch {
+    // ignore
+  }
 }
 
 /** 1234 -> "1.2k", 340 -> "340", 123456 -> "123k". */

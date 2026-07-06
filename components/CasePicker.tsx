@@ -98,7 +98,7 @@ function TickFilter({
         </span>
       </button>
       {open && (
-        <div className="max-h-52 overflow-y-auto border-t border-zinc-200 px-2 py-1 dark:border-zinc-700">
+        <div className="max-h-52 overflow-y-auto overscroll-y-contain border-t border-zinc-200 px-2 py-1 dark:border-zinc-700">
           <label className="flex cursor-pointer items-center gap-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200">
             <input
               type="checkbox"
@@ -442,7 +442,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-4">
         {manifestError ? (
           <p className="mx-2 mt-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
             {manifestError}

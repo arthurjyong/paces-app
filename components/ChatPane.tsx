@@ -138,7 +138,7 @@ export default function ChatPane({
       </header>
 
       {/* Transcript */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
         <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-5">
           {!hasKey && (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
@@ -230,7 +230,10 @@ export default function ChatPane({
                 <button
                   type="button"
                   onClick={onRetry}
-                  disabled={pending !== null}
+                  // !hasKey mirrors the Begin gate: on a restored encounter the
+                  // demo/dev-bridge probes may still be in flight — an early
+                  // click would misfire the "add your API key" error.
+                  disabled={pending !== null || !hasKey}
                   className="shrink-0 rounded border border-red-400 px-2 py-0.5 text-xs font-medium hover:bg-red-100 disabled:opacity-40 dark:border-red-700 dark:hover:bg-red-900/40"
                 >
                   Retry
