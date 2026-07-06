@@ -33,6 +33,13 @@ import Settings from '@/components/Settings';
 import DemoAccess from '@/components/DemoAccess';
 import CasePicker from '@/components/CasePicker';
 import ChatPane from '@/components/ChatPane';
+import HistoryList from '@/components/HistoryList';
+import {
+  archiveEncounter,
+  deleteArchived,
+  listArchived,
+  type ArchivedEncounter,
+} from '@/components/historyStore';
 
 const LS_API_KEY = 'paces.apiKey';
 const LS_MODEL = 'paces.model';
@@ -56,6 +63,19 @@ function errorFrom(data: unknown, fallback: string): string {
     return (data as ApiError).error;
   }
   return fallback;
+}
+
+/**
+ * A rehydrated transcript ending in an unanswered user turn (parked or
+ * reloaded mid-reply) gets a notice that lights the existing Retry path.
+ * With a marksheet the encounter is effectively over — no nag.
+ */
+function retryNotice(entries: TranscriptEntry[], marksheet: MarkSheet | null): string | null {
+  const last = entries[entries.length - 1];
+  if (!last || last.role !== 'user' || marksheet) return null;
+  return last.content === BEGIN_MESSAGE
+    ? 'Encounter restored — it had not yet begun when it was put down. Press Retry to open it.'
+    : 'Encounter restored — the examiner had not yet replied to your last message. Press Retry to resend it.';
 }
 
 export default function Home() {
@@ -88,6 +108,19 @@ export default function Home() {
   // Mobile sidebar drawer.
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // History archive (IndexedDB) — past encounters, newest first.
+  const [history, setHistory] = useState<ArchivedEncounter[]>([]);
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistory(await listArchived());
+    } catch {
+      // IndexedDB unavailable (rare) — History simply stays hidden
+    }
+  }, []);
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
+
   // Tracks the currently selected case so in-flight examiner replies for a
   // previous case are discarded instead of contaminating a new transcript
   // (select-during-flight race).
@@ -101,6 +134,15 @@ export default function Home() {
   // empty state would clobber the saved encounter before it could be read.
   const restoreAttemptedRef = useRef(false);
   const autosaveEnabledRef = useRef(false);
+  // State twin of the gate, for the UI: History rows stay disabled until the
+  // restore attempt completes (opening one sooner would let the autosave
+  // clobber a not-yet-restored live blob).
+  const [restoreDone, setRestoreDone] = useState(false);
+  // Synchronous in-flight flag for the async leave transitions (open a History
+  // record / New case / switch case). State like caseLoading only takes effect
+  // after a re-render — this ref closes the same-tick window where a second
+  // click could interleave and destroy or duplicate an archived record.
+  const transitionRef = useRef(false);
 
   // Dev-only `claude -p` subscription bridge (local tuning without an API
   // key). /api/dev-status 404s in production, so this stays false there.
@@ -193,40 +235,45 @@ export default function Home() {
     };
   }, []);
 
-  // Restore the autosaved encounter once the manifest is in — synchronous (the
-  // blob carries the stem, meta comes fresh from the manifest), so there is no
-  // failure path that could strand or destroy a saved encounter. The saved case
-  // id must still exist (content redeploys can rename/remove cases). Runs once;
-  // the ref also guards React StrictMode's dev double-invoke.
+  // Restore the autosaved encounter once the manifest settles (loaded OR
+  // failed) — synchronous (the blob carries stem + a meta snapshot), so there
+  // is no failure path that could strand or destroy a saved encounter. Meta
+  // comes fresh from the manifest when the case still exists, else from the
+  // blob's own snapshot (so an encounter on a redeploy-removed case, or a
+  // manifest outage, still restores). Runs once; the ref also guards React
+  // StrictMode's dev double-invoke.
   useEffect(() => {
-    if (!manifest || restoreAttemptedRef.current) return;
+    if ((!manifest && !manifestError) || restoreAttemptedRef.current) return;
     restoreAttemptedRef.current = true;
     const saved = loadSavedEncounter();
-    const meta = saved ? manifest.cases.find((c) => c.id === saved.caseId) : undefined;
-    if (!saved || !meta) {
-      // Drop stale (case gone) and unreadable blobs alike — removeItem on an
-      // empty slot is a no-op.
-      clearSavedEncounter();
+    if (!saved) {
+      clearSavedEncounter(); // drop unreadable blobs; no-op on an empty slot
       autosaveEnabledRef.current = true;
+      setRestoreDone(true);
+      return;
+    }
+    const meta = manifest?.cases.find((c) => c.id === saved.caseId) ?? saved.meta;
+    if (!meta) {
+      if (manifest) {
+        // Manifest is live and doesn't know the case, and the blob predates
+        // the meta snapshot — genuinely stale; drop it.
+        clearSavedEncounter();
+        autosaveEnabledRef.current = true;
+        setRestoreDone(true);
+      }
+      // Manifest failed AND the blob has no meta snapshot: keep the blob for
+      // a later reload. Autosave + History stay disabled so nothing can
+      // clobber it this session.
       return;
     }
     setPublicCase({ meta, stem: saved.stem });
     setEntries(saved.entries);
     setMarksheet(saved.marksheet);
     setMarkUsage(saved.markUsage);
-    const last = saved.entries[saved.entries.length - 1];
-    if (last && last.role === 'user' && !saved.marksheet) {
-      // Reloaded mid-reply: the transcript ends with an unanswered user turn.
-      // Surfacing it as an error lights up the existing Retry path. (With a
-      // marksheet already landed the encounter is effectively over — no nag.)
-      setError(
-        last.content === BEGIN_MESSAGE
-          ? 'Encounter restored — it had not yet begun when the page reloaded. Press Retry to open it.'
-          : 'Encounter restored — the examiner had not yet replied to your last message. Press Retry to resend it.',
-      );
-    }
+    setError(retryNotice(saved.entries, saved.marksheet));
     autosaveEnabledRef.current = true;
-  }, [manifest]);
+    setRestoreDone(true);
+  }, [manifest, manifestError]);
 
   // Autosave the live encounter on every change (case id + stem + transcript
   // incl. revealed images + marksheet). The API key is NOT part of this blob —
@@ -237,6 +284,7 @@ export default function Home() {
       v: 1,
       caseId: publicCase.meta.id,
       stem: publicCase.stem,
+      meta: publicCase.meta,
       entries,
       marksheet,
       markUsage,
@@ -244,20 +292,52 @@ export default function Home() {
     });
   }, [publicCase, entries, marksheet, markUsage]);
 
+  /**
+   * Park the live encounter (if it has any transcript) into the History
+   * archive. Returns whether the encounter is safe to replace: true unless an
+   * actual write failed. newCase/selectCase treat failure as best-effort (the
+   * user chose to leave; degrading to the old discard behaviour), but
+   * openArchived aborts on failure — History manipulation must not destroy a
+   * transcript it failed to park.
+   */
+  const archiveCurrent = useCallback(async (): Promise<boolean> => {
+    if (!publicCase || entries.length === 0) return true;
+    const archivedAt = new Date().toISOString();
+    try {
+      await archiveEncounter({
+        id: `${archivedAt}_${publicCase.meta.id}`,
+        archivedAt,
+        meta: publicCase.meta,
+        stem: publicCase.stem,
+        entries,
+        marksheet,
+        markUsage,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [publicCase, entries, marksheet, markUsage]);
+
   const selectCase = useCallback(
     async (id: string) => {
-      if (pending || caseLoading) return;
+      if (pending || caseLoading || transitionRef.current) return;
       if (publicCase?.meta.id === id) {
         setSidebarOpen(false);
         return;
       }
-      if (entries.length > 0 && !window.confirm('Leave this encounter? The transcript will be discarded.')) {
+      if (entries.length > 0 && !window.confirm('Leave this encounter? It will be saved to History.')) {
         return;
       }
+      transitionRef.current = true;
       setSidebarOpen(false);
       setCaseLoading(true);
       setError(null);
       try {
+        // Archive before the fetch: if the fetch then fails the encounter
+        // stays live AND archived (harmless duplicate later) — never lost.
+        await archiveCurrent();
+        void refreshHistory();
         const res = await fetch(`/api/case/${encodeURIComponent(id)}`);
         const data = await readJson(res);
         if (!res.ok) throw new Error(errorFrom(data, `Failed to load case (${res.status})`));
@@ -268,10 +348,65 @@ export default function Home() {
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load case.');
       } finally {
+        transitionRef.current = false;
         setCaseLoading(false);
       }
     },
-    [pending, caseLoading, publicCase, entries.length],
+    [pending, caseLoading, publicCase, entries.length, archiveCurrent, refreshHistory],
+  );
+
+  /**
+   * Reopen an archived encounter as the live one (move semantics: the record
+   * leaves History and re-archives when next parked, so no duplicates). The
+   * backend is stateless, so an unmarked encounter simply continues.
+   */
+  const openArchived = useCallback(
+    async (rec: ArchivedEncounter) => {
+      if (pending || caseLoading || transitionRef.current) return;
+      if (entries.length > 0 && !window.confirm('Open this past encounter? The current one will be saved to History.')) {
+        return;
+      }
+      transitionRef.current = true;
+      setCaseLoading(true);
+      setSidebarOpen(false);
+      try {
+        const parked = await archiveCurrent();
+        if (!parked) {
+          // Never trade a live transcript for a record we failed to park.
+          setError(
+            'Could not save the current encounter to History (storage unavailable?), so it stays open.',
+          );
+          return;
+        }
+        try {
+          await deleteArchived(rec.id);
+        } catch {
+          // record stays listed; opening it again is idempotent
+        }
+        setPublicCase({ meta: rec.meta, stem: rec.stem });
+        setEntries(rec.entries);
+        setMarksheet(rec.marksheet);
+        setMarkUsage(rec.markUsage);
+        setError(retryNotice(rec.entries, rec.marksheet));
+        void refreshHistory();
+      } finally {
+        transitionRef.current = false;
+        setCaseLoading(false);
+      }
+    },
+    [pending, caseLoading, entries.length, archiveCurrent, refreshHistory],
+  );
+
+  const deleteFromHistory = useCallback(
+    async (id: string) => {
+      try {
+        await deleteArchived(id);
+      } catch {
+        // leave the row; user can retry
+      }
+      void refreshHistory();
+    },
+    [refreshHistory],
   );
 
   /** POST /api/examiner action:'chat' with the given transcript; appends the reply on success. */
@@ -338,9 +473,10 @@ export default function Home() {
 
   const send = useCallback(
     (text: string) => {
-      // caseLoading guard: while a new case is being fetched the old pane is
-      // still rendered — sending then would target the outgoing case.
-      if (!publicCase || pending || caseLoading) return;
+      // caseLoading/transition guard: while a new case is being fetched (or a
+      // leave transition is archiving) the old pane is still rendered —
+      // sending then would target the outgoing case or miss the archive.
+      if (!publicCase || pending || caseLoading || transitionRef.current) return;
       const next: TranscriptEntry[] = [...entries, { role: 'user', content: text }];
       setEntries(next);
       void runChat(next);
@@ -360,7 +496,7 @@ export default function Home() {
   }, [pending, caseLoading, entries, runChat]);
 
   const mark = useCallback(async () => {
-    if (!publicCase || pending || caseLoading || entries.length === 0) return;
+    if (!publicCase || pending || caseLoading || transitionRef.current || entries.length === 0) return;
     const key = apiKey.trim();
     if (!key && !demoActive && !cliBridge) {
       setError(NO_KEY_ERROR);
@@ -398,16 +534,29 @@ export default function Home() {
   }, [publicCase, pending, caseLoading, entries, apiKey, demoActive, cliBridge, model, refreshDemoStatus]);
 
   const newCase = useCallback(() => {
-    if (pending) return;
-    if (!window.confirm('End this encounter and choose a new case? The transcript will be discarded.')) return;
-    clearSavedEncounter();
-    setPublicCase(null);
-    setEntries([]);
-    setMarksheet(null);
-    setMarkUsage(null);
-    setError(null);
-    setSidebarOpen(true);
-  }, [pending]);
+    if (pending || caseLoading || transitionRef.current) return;
+    if (entries.length > 0 && !window.confirm('End this encounter and choose a new case? It will be saved to History.')) {
+      return;
+    }
+    transitionRef.current = true;
+    setCaseLoading(true);
+    void (async () => {
+      try {
+        await archiveCurrent();
+        clearSavedEncounter();
+        setPublicCase(null);
+        setEntries([]);
+        setMarksheet(null);
+        setMarkUsage(null);
+        setError(null);
+        setSidebarOpen(true);
+        void refreshHistory();
+      } finally {
+        transitionRef.current = false;
+        setCaseLoading(false);
+      }
+    })();
+  }, [pending, caseLoading, entries.length, archiveCurrent, refreshHistory]);
 
   const canRetry = error !== null && entries.length > 0 && entries[entries.length - 1].role === 'user';
 
@@ -470,6 +619,12 @@ export default function Home() {
           demoActive={demoActive}
           onApiKeyChange={updateApiKey}
           onModelChange={updateModel}
+        />
+        <HistoryList
+          records={history}
+          disabled={pending !== null || caseLoading || !restoreDone}
+          onOpen={(rec) => void openArchived(rec)}
+          onDelete={(id) => void deleteFromHistory(id)}
         />
         <CasePicker
           manifest={manifest}

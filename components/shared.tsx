@@ -4,7 +4,7 @@
 // Skill names, transcript entry shape, token formatting, tiny badge + minimal-markdown renderers.
 
 import { useCallback, useSyncExternalStore, type ReactNode } from 'react';
-import type { MarkSheet, RevealedImage, SkillId, TokenUsage } from '@/lib/types';
+import type { MarkSheet, PublicCaseMeta, RevealedImage, SkillId, TokenUsage } from '@/lib/types';
 
 /** Official MRCP PACES skill names, keyed by skill letter. */
 export const SKILL_NAMES: Record<SkillId, string> = {
@@ -98,10 +98,31 @@ export interface SavedEncounter {
   caseId: string;
   /** the stem as served when the encounter ran */
   stem: string;
+  /** meta snapshot at save time — lets the blob restore even when the case id
+   *  has left the manifest (content redeploy) or the manifest fetch fails.
+   *  Optional for blobs written before this field existed. */
+  meta?: PublicCaseMeta;
   entries: TranscriptEntry[];
   marksheet: MarkSheet | null;
   markUsage: TokenUsage | null;
   savedAt: string;
+}
+
+/**
+ * The meta fields the UI actually renders / the engine needs. Narrower than
+ * PublicCaseMeta's full shape by design (unchecked fields are display-unused);
+ * the cast is deliberate.
+ */
+export function isRenderableMeta(meta: unknown): meta is PublicCaseMeta {
+  if (!meta || typeof meta !== 'object') return false;
+  const m = meta as PublicCaseMeta;
+  return (
+    typeof m.id === 'string' &&
+    typeof m.caseCode === 'string' &&
+    typeof m.displayTitle === 'string' &&
+    typeof m.sittingLabel === 'string' &&
+    typeof m.timing === 'string'
+  );
 }
 
 function isTokenUsage(x: unknown): x is TokenUsage {
@@ -163,11 +184,46 @@ function sanitizeEntry(x: unknown): TranscriptEntry | null {
   return out;
 }
 
+/** Validated encounter payload common to the autosave blob and History records. */
+export interface EncounterPayload {
+  stem: string;
+  entries: TranscriptEntry[];
+  marksheet: MarkSheet | null;
+  markUsage: TokenUsage | null;
+}
+
+/**
+ * Rebuild an encounter payload from untrusted data (localStorage blob or an
+ * IndexedDB history record), or null if it is unusable. A marksheet/markUsage
+ * that fails validation (e.g. schema drift across deploys) is nulled rather
+ * than sinking the transcript; a broken transcript turn rejects the whole
+ * payload (the conversation can't be trusted).
+ */
+export function sanitizeEncounterPayload(p: {
+  stem?: unknown;
+  entries?: unknown;
+  marksheet?: unknown;
+  markUsage?: unknown;
+}): EncounterPayload | null {
+  if (typeof p.stem !== 'string' || p.stem.length === 0) return null;
+  if (!Array.isArray(p.entries)) return null;
+  const entries: TranscriptEntry[] = [];
+  for (const e of p.entries) {
+    const clean = sanitizeEntry(e);
+    if (!clean) return null;
+    entries.push(clean);
+  }
+  return {
+    stem: p.stem,
+    entries,
+    marksheet: isMarkSheet(p.marksheet) ? p.marksheet : null,
+    markUsage: isTokenUsage(p.markUsage) ? p.markUsage : null,
+  };
+}
+
 /**
  * Parse + validate the saved encounter; a malformed/foreign blob reads as
- * "nothing saved". A marksheet/markUsage that fails validation (e.g. schema
- * drift across deploys) is nulled rather than sinking the transcript; a broken
- * transcript turn rejects the whole blob (the conversation can't be trusted).
+ * "nothing saved".
  */
 export function loadSavedEncounter(): SavedEncounter | null {
   try {
@@ -176,21 +232,13 @@ export function loadSavedEncounter(): SavedEncounter | null {
     const p = JSON.parse(raw) as SavedEncounter;
     if (!p || typeof p !== 'object' || p.v !== 1) return null;
     if (typeof p.caseId !== 'string' || p.caseId.length === 0) return null;
-    if (typeof p.stem !== 'string' || p.stem.length === 0) return null;
-    if (!Array.isArray(p.entries)) return null;
-    const entries: TranscriptEntry[] = [];
-    for (const e of p.entries) {
-      const clean = sanitizeEntry(e);
-      if (!clean) return null;
-      entries.push(clean);
-    }
+    const payload = sanitizeEncounterPayload(p);
+    if (!payload) return null;
     return {
       v: 1,
       caseId: p.caseId,
-      stem: p.stem,
-      entries,
-      marksheet: isMarkSheet(p.marksheet) ? p.marksheet : null,
-      markUsage: isTokenUsage(p.markUsage) ? p.markUsage : null,
+      ...(isRenderableMeta(p.meta) ? { meta: p.meta } : {}),
+      ...payload,
       savedAt: typeof p.savedAt === 'string' ? p.savedAt : '',
     };
   } catch {
