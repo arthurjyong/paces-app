@@ -417,28 +417,42 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
                 {expanded.has(label) && (cases.length === 0 ? emptyNote : caseRows(cases))}
               </div>
             ))}
-            {sourceTree.hospitals.map((h) => {
-              const hKey = `hosp:${h.hospital}`;
-              const hSelected = h.months.some(([, cs]) => hasSelected(cs));
-              return (
-                <div key={hKey} className="mb-0.5">
-                  {groupHeader(hKey, h.hospital, h.total, hSelected)}
-                  {expanded.has(hKey) && (
-                    <div className="ml-2 border-l border-zinc-200 pl-1 dark:border-zinc-800">
-                      {h.months.map(([monthYear, cases]) => {
-                        const mKey = `${h.hospital} · ${monthYear}`;
-                        return (
-                          <div key={mKey}>
-                            {groupHeader(mKey, monthYear, cases.length, hasSelected(cases))}
-                            {expanded.has(mKey) && caseRows(cases)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {sourceTree.hospitals.length > 0 && (
+              <div className="mb-0.5">
+                {groupHeader(
+                  'past-carousels',
+                  'Past carousels',
+                  sourceTree.hospitals.reduce((n, h) => n + h.total, 0),
+                  sourceTree.hospitals.some((h) => h.months.some(([, cs]) => hasSelected(cs)))
+                )}
+                {expanded.has('past-carousels') && (
+                  <div className="ml-2 border-l border-zinc-200 pl-1 dark:border-zinc-800">
+                    {sourceTree.hospitals.map((h) => {
+                      const hKey = `hosp:${h.hospital}`;
+                      const hSelected = h.months.some(([, cs]) => hasSelected(cs));
+                      return (
+                        <div key={hKey} className="mb-0.5">
+                          {groupHeader(hKey, h.hospital, h.total, hSelected)}
+                          {expanded.has(hKey) && (
+                            <div className="ml-2 border-l border-zinc-200 pl-1 dark:border-zinc-800">
+                              {h.months.map(([monthYear, cases]) => {
+                                const mKey = `${h.hospital} · ${monthYear}`;
+                                return (
+                                  <div key={mKey}>
+                                    {groupHeader(mKey, monthYear, cases.length, hasSelected(cases))}
+                                    {expanded.has(mKey) && caseRows(cases)}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
