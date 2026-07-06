@@ -197,6 +197,22 @@ function stripSpoilerNotes(body: string[]): string[] {
   return out;
 }
 
+/**
+ * The stem card renders near-plain text (no markdown engine), so source
+ * formatting artifacts must not reach it: unwrap blockquote markers ("> ")
+ * and drop horizontal-rule separator lines ("---"). Mirrored in
+ * scripts/build-content.mjs so build validation sees the served text.
+ */
+function presentStemLines(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of lines) {
+    const line = raw.replace(/^\s*(?:>\s*)+/, '');
+    if (/^\s*(-{3,}|_{3,}|\*{3,})\s*$/.test(line)) continue;
+    out.push(line);
+  }
+  return out;
+}
+
 export function getCaseStem(id: string): string {
   const cached = caseStemCache.get(id);
   if (cached !== undefined) return cached;
@@ -211,7 +227,7 @@ export function getCaseStem(id: string): string {
     if (lines[i].startsWith('## ')) break;
     body.push(lines[i]);
   }
-  const stem = stripSpoilerNotes(body).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const stem = presentStemLines(stripSpoilerNotes(body)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   if (!stem) {
     throw new ContentError('Case file is malformed (empty "## Candidate stem" section). Re-run "node scripts/build-content.mjs".');
   }

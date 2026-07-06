@@ -116,6 +116,18 @@ function stripSpoilerNotes(body) {
   return out;
 }
 
+// Presentation normalization for the near-plain-text stem card: unwrap
+// blockquote markers, drop horizontal-rule lines. Mirrors lib/content.ts.
+function presentStemLines(lines) {
+  const out = [];
+  for (const raw of lines) {
+    const line = raw.replace(/^\s*(?:>\s*)+/, '');
+    if (/^\s*(-{3,}|_{3,}|\*{3,})\s*$/.test(line)) continue;
+    out.push(line);
+  }
+  return out;
+}
+
 /** Extract the "## Candidate stem" section (prefix match) up to the next "## " heading,
  *  with spoiler notes stripped — the same text the runtime parser serves. */
 function extractStem(md) {
@@ -129,7 +141,7 @@ function extractStem(md) {
   for (let i = start + 1; i < lines.length; i++) {
     if (lines[i].startsWith('## ')) { end = i; break; }
   }
-  return stripSpoilerNotes(lines.slice(start + 1, end)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  return presentStemLines(stripSpoilerNotes(lines.slice(start + 1, end))).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ---------- wipe & recreate content/ ----------

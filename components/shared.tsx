@@ -104,17 +104,23 @@ export function usageLine(u: TokenUsage, kbLookups?: number): string {
  */
 export function RichText({ text, className = '' }: { text: string; className?: string }) {
   const nodes: ReactNode[] = [];
-  const re = /\*\*([^*][\s\S]*?)\*\*/g;
+  // **bold** first (so it wins over italic), then single-asterisk *italic*
+  // within one line — the corpus uses both; anything else renders as plain text.
+  const re = /\*\*([^*][\s\S]*?)\*\*|\*([^*\n]+)\*/g;
   let last = 0;
   let key = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) nodes.push(text.slice(last, m.index));
-    nodes.push(
-      <strong key={key++} className="font-semibold">
-        {m[1]}
-      </strong>,
-    );
+    if (m[1] !== undefined) {
+      nodes.push(
+        <strong key={key++} className="font-semibold">
+          {m[1]}
+        </strong>,
+      );
+    } else {
+      nodes.push(<em key={key++}>{m[2]}</em>);
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) nodes.push(text.slice(last));

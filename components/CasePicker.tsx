@@ -18,6 +18,17 @@ const CLASSIFICATIONS: Array<[EncounterType, string]> = [
   ['examination', 'Examination'],
 ];
 
+// Coarse source kinds for the Source filter: the pooled question banks
+// (standalone `LIB_` cases) vs the real past-carousel sittings.
+const SOURCES: Array<[string, string]> = [
+  ['bank', 'Question banks'],
+  ['carousel', 'Past carousels'],
+];
+
+function sourceOf(c: PublicCaseMeta): string {
+  return c.sitting.startsWith('LIB_') ? 'bank' : 'carousel';
+}
+
 type View = 'type' | 'source';
 
 // Fixed ordering for the by-type groups; any exam specialty not listed here
@@ -132,8 +143,9 @@ interface CasePickerProps {
 
 export default function CasePicker({ manifest, manifestError, selectedId, onSelect }: CasePickerProps) {
   const [view, setView] = useState<View>('type');
-  // null = all selected, for both filters (see TickFilter).
+  // null = all selected, for every filter (see TickFilter).
   const [classSel, setClassSel] = useState<Set<string> | null>(null);
+  const [sourceSel, setSourceSel] = useState<Set<string> | null>(null);
   const [themeSel, setThemeSel] = useState<Set<string> | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -154,20 +166,32 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     return manifest.cases.filter((c) => classSel.has(c.encounterType));
   }, [manifest, classSel]);
 
-  // Per-theme counts within the current classification filter, shown beside each tick box.
-  const themeCounts = useMemo<Map<string, number>>(() => {
+  // Per-source counts within the current classification filter.
+  const sourceCounts = useMemo<Map<string, number>>(() => {
     const counts = new Map<string, number>();
-    for (const c of classFiltered) {
-      if (c.theme) counts.set(c.theme, (counts.get(c.theme) ?? 0) + 1);
-    }
+    for (const c of classFiltered) counts.set(sourceOf(c), (counts.get(sourceOf(c)) ?? 0) + 1);
     return counts;
   }, [classFiltered]);
 
+  const sourceFiltered = useMemo<PublicCaseMeta[]>(() => {
+    if (sourceSel === null) return classFiltered;
+    return classFiltered.filter((c) => sourceSel.has(sourceOf(c)));
+  }, [classFiltered, sourceSel]);
+
+  // Per-theme counts within the classification + source filters, shown beside each tick box.
+  const themeCounts = useMemo<Map<string, number>>(() => {
+    const counts = new Map<string, number>();
+    for (const c of sourceFiltered) {
+      if (c.theme) counts.set(c.theme, (counts.get(c.theme) ?? 0) + 1);
+    }
+    return counts;
+  }, [sourceFiltered]);
+
   const filtered = useMemo<PublicCaseMeta[]>(() => {
-    if (themeSel === null) return classFiltered;
+    if (themeSel === null) return sourceFiltered;
     // Untagged cases (none today) fail open — a theme filter should never hide them.
-    return classFiltered.filter((c) => (c.theme ? themeSel.has(c.theme) : true));
-  }, [classFiltered, themeSel]);
+    return sourceFiltered.filter((c) => (c.theme ? themeSel.has(c.theme) : true));
+  }, [sourceFiltered, themeSel]);
 
   // By-type groups. Within a group, rows are stable-sorted by the label's
   // first segment (the hospital, or the bank name) so each source clusters
@@ -217,7 +241,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
       if (g) g.push(c);
       else months.set(monthYear, [c]);
     }
-    if (classSel === null && themeSel === null && manifest) {
+    if (classSel === null && sourceSel === null && themeSel === null && manifest) {
       for (const b of BANK_ORDER) if (!bankMap.has(b)) bankMap.set(b, []);
     }
     const banks = BANK_ORDER.filter((b) => bankMap.has(b)).map((b) => [b, bankMap.get(b)!] as [string, PublicCaseMeta[]]);
@@ -235,7 +259,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
         };
       });
     return { banks, hospitals };
-  }, [filtered, view, classSel, themeSel, manifest]);
+  }, [filtered, view, classSel, sourceSel, themeSel, manifest]);
 
   function switchView(v: View) {
     if (v === view) return;
@@ -388,6 +412,20 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
             setClassSel
           )}
           onToggleAll={makeToggleAll(classSel, CLASSIFICATIONS.length, setClassSel)}
+        />
+        <TickFilter
+          title="Source"
+          options={SOURCES.map(([key, label]) => ({
+            key,
+            label,
+            count: sourceCounts.get(key) ?? 0,
+          }))}
+          sel={sourceSel}
+          onToggle={makeToggle(
+            SOURCES.map(([k]) => k),
+            setSourceSel
+          )}
+          onToggleAll={makeToggleAll(sourceSel, SOURCES.length, setSourceSel)}
         />
         {themes.length > 0 && (
           <TickFilter
