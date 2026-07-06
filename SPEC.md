@@ -14,6 +14,16 @@ Every case is described by three INDEPENDENT axes. Never mix them in labels, fil
 3. **Source** — for carousel cases: the real sitting ("NUH · Mar 2026"). For ALL standalone cases: one pooled type-named bank — "Consult bank" / "Communication bank" / "Examination bank" (per Arthur 2026-07-06: collection provenance is deliberately NOT user-visible; it stays internal). Source labels must never smuggle in content/topic ("Eye OSCEs" was wrong — the eye-ness is theme=ophthalmology), author names, or initials — and collection dir names flow into served `id`/`sitting`/`file` fields, so the DIR names must be neutral too.
 
 `specialty` (filename-derived: Cardiovascular/…/Communication/Consultation) is a legacy field that mixes axes 1 and 2 — keep it server/meta-only for exam-station grouping; don't build new UI on it.
+
+## Canonical candidate-stem format (binding — locked with Arthur 2026-07-07; all 503 source stems rewritten to it)
+
+The `## Candidate stem` section of every case file is **"official exam prose"**: 2–4 short plain-prose paragraphs in the style of the real MRCP PACES written instruction. **Near-plain text only** — no bold, bullets, blockquotes, `---`, headings, tables. No tutor/meta commentary, no encounter-timing sentences (the card header shows authoritative timing), no station numbers, no diagnosis reveals (given diagnoses in communication scenarios are fine — they're scenario information).
+
+- **Consultation:** "You are the [role] in [setting]." → patient + quoted referral → "On arrival: [vitals prose]" (if given) → "Your task is to assess the patient's problems and address any questions or concerns raised by the patient. You will then discuss the case with the examiners."
+- **Communication:** "You are the [role] in [setting]." → "You are about to speak to [person]." + door-given background → available information (if given) → "Your task is to [task]. You will then discuss the case with the examiners."
+- **Examination (brief):** "This [age]-year-old [man/woman] [one-line context]." → "Please examine [system] and then present your findings, with your diagnosis and differential. Do not take a history."
+
+Any future enrichment/generation MUST emit stems in this format — the runtime spoiler/timing/artifact strips in `getCaseStem()` are safety nets, not the convention (as of the 2026-07-07 rewrite they strip 0 blocks corpus-wide).
 **Shared types:** `lib/types.ts` (already written — code against it, never redefine its types).
 
 ## Security invariants (any violation is a critical bug)
