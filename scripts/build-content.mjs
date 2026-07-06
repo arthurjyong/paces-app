@@ -66,7 +66,38 @@ function stripQuotes(s) {
   return t;
 }
 
-/** Extract the "## Candidate stem" section (prefix match) up to the next "## " heading. */
+// Tutor / recollection notes inside the stem section are examiner material that
+// must never reach the candidate. This mirrors the IDENTICAL strip in
+// lib/content.ts getCaseStem (the runtime parser that actually serves the stem)
+// so build validation sees the same text the client will.
+const SPOILER_NOTE_MARKER = /^\s*(?:>\s*)*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
+const SPOILER_NOTE_HEADING = /^\s*#{3,}\s*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
+let spoilerNotesStripped = 0;
+
+function stripSpoilerNotes(body) {
+  const out = [];
+  let i = 0;
+  while (i < body.length) {
+    if (SPOILER_NOTE_HEADING.test(body[i])) {
+      spoilerNotesStripped++;
+      i++;
+      while (i < body.length && !/^\s*#/.test(body[i])) i++;
+      continue;
+    }
+    if (SPOILER_NOTE_MARKER.test(body[i])) {
+      spoilerNotesStripped++;
+      const isQuote = /^\s*>/.test(body[i]);
+      while (i < body.length && body[i].trim() !== '' && (!isQuote || /^\s*>/.test(body[i]))) i++;
+      continue;
+    }
+    out.push(body[i]);
+    i++;
+  }
+  return out;
+}
+
+/** Extract the "## Candidate stem" section (prefix match) up to the next "## " heading,
+ *  with spoiler notes stripped — the same text the runtime parser serves. */
 function extractStem(md) {
   const lines = md.split('\n');
   let start = -1;
@@ -78,7 +109,7 @@ function extractStem(md) {
   for (let i = start + 1; i < lines.length; i++) {
     if (lines[i].startsWith('## ')) { end = i; break; }
   }
-  return lines.slice(start + 1, end).join('\n').trim();
+  return stripSpoilerNotes(lines.slice(start + 1, end)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // ---------- wipe & recreate content/ ----------
@@ -451,4 +482,5 @@ if (stemFailures.length > 0) fail(`${stemFailures.length} case file(s) without a
 // case_ids.json is externally maintained — a botched key migration could map two
 // cases to one code, silently breaking the "unique, referable" case-ID contract.
 if (new Set(cases.map((c) => c.caseCode)).size !== cases.length) fail('duplicate caseCode values — check _index/case_ids.json for a bad key migration');
+console.log(`spoiler notes stripped from served stems: ${spoilerNotesStripped}`);
 console.log('OK');

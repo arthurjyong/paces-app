@@ -140,6 +140,40 @@ const caseStemCache = new Map<string, string>();
  * "## " heading), stripped of the heading line itself. This is the ONLY part of
  * a case file that may reach the client.
  */
+/**
+ * Enriched case files often end the "## Candidate stem" section with a tutor /
+ * recollection note (a blockquote or paragraph of teaching commentary that
+ * names the diagnosis). Those notes are examiner material — they stay in the
+ * full case file used for the hidden prompt — but must NEVER reach the
+ * candidate's door note (invariant 1). Keep this marker list in sync with the
+ * identical strip in scripts/build-content.mjs (validation parity).
+ */
+const SPOILER_NOTE_MARKER = /^\s*(?:>\s*)*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
+const SPOILER_NOTE_HEADING = /^\s*#{3,}\s*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
+
+function stripSpoilerNotes(body: string[]): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < body.length) {
+    if (SPOILER_NOTE_HEADING.test(body[i])) {
+      // A "### Examiner note" subsection: skip until the next heading (or end).
+      i++;
+      while (i < body.length && !/^\s*#/.test(body[i])) i++;
+      continue;
+    }
+    if (SPOILER_NOTE_MARKER.test(body[i])) {
+      const isQuote = /^\s*>/.test(body[i]);
+      // Skip the whole contiguous block: for a blockquote, consecutive ">"
+      // lines; for a plain paragraph, lines until the next blank line.
+      while (i < body.length && body[i].trim() !== '' && (!isQuote || /^\s*>/.test(body[i]))) i++;
+      continue;
+    }
+    out.push(body[i]);
+    i++;
+  }
+  return out;
+}
+
 export function getCaseStem(id: string): string {
   const cached = caseStemCache.get(id);
   if (cached !== undefined) return cached;
@@ -154,7 +188,7 @@ export function getCaseStem(id: string): string {
     if (lines[i].startsWith('## ')) break;
     body.push(lines[i]);
   }
-  const stem = body.join('\n').trim();
+  const stem = stripSpoilerNotes(body).join('\n').replace(/\n{3,}/g, '\n\n').trim();
   if (!stem) {
     throw new ContentError('Case file is malformed (empty "## Candidate stem" section). Re-run "node scripts/build-content.mjs".');
   }
