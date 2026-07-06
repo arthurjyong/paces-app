@@ -1,22 +1,21 @@
 'use client';
 
 // Sidebar case picker. Nomenclature (see SPEC.md): CLASSIFICATION = consultation /
-// communication / examination (filter chips); THEME = clinical topic (tick-box
-// multi-select with Select all); SOURCE = where the case came from (a sitting or
-// collection — the row tag in the default view). Two groupings: by type
-// (classification, default) or by source. Selection is delegated to the parent,
-// which fetches /api/case/[id].
+// communication / examination; THEME = clinical topic. Both filter as tick-box
+// multi-selects with Select all. SOURCE = where the case came from (a sitting or
+// pooled bank — the row/group label). Two groupings: by type (classification,
+// default) or by source. Rows are deliberately blind: title only, no encounter
+// number, no theme. Selection is delegated to the parent, which fetches
+// /api/case/[id].
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { EncounterType, PublicCaseMeta, PublicManifest } from '@/lib/types';
 
-const FILTERS = ['All', 'Consultation', 'Communication', 'Examination'] as const;
-type Filter = (typeof FILTERS)[number];
-const FILTER_TYPE: Record<Exclude<Filter, 'All'>, EncounterType> = {
-  Consultation: 'consultation',
-  Communication: 'communication',
-  Examination: 'examination',
-};
+const CLASSIFICATIONS: Array<[EncounterType, string]> = [
+  ['consultation', 'Consultation'],
+  ['communication', 'Communication'],
+  ['examination', 'Examination'],
+];
 
 type View = 'type' | 'source';
 
@@ -43,6 +42,79 @@ function typeGroupOf(c: PublicCaseMeta): string {
   return `Examination · ${c.specialty}`;
 }
 
+/**
+ * Collapsible tick-box multi-select. `sel === null` means "all selected" (the
+ * default — also keeps newly added options included); an explicit Set tracks
+ * partial selections.
+ */
+function TickFilter({
+  title,
+  options,
+  sel,
+  onToggle,
+  onToggleAll,
+}: {
+  title: string;
+  options: Array<{ key: string; label: ReactNode; count: number }>;
+  sel: Set<string> | null;
+  onToggle: (key: string) => void;
+  onToggleAll: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const allSelected = sel === null || sel.size === options.length;
+  return (
+    <div className="mt-2 rounded-md border border-zinc-200 dark:border-zinc-700">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between rounded-md px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+      >
+        <span className="font-medium">{title}</span>
+        <span className="ml-2 flex shrink-0 items-center gap-1 text-zinc-400 dark:text-zinc-500">
+          {allSelected ? 'All' : `${sel?.size ?? 0}/${options.length}`}
+          <span className={`transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden>
+            ›
+          </span>
+        </span>
+      </button>
+      {open && (
+        <div className="max-h-52 overflow-y-auto border-t border-zinc-200 px-2 py-1 dark:border-zinc-700">
+          <label className="flex cursor-pointer items-center gap-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={(el) => {
+                // Tri-state: partial selections show as indeterminate, so
+                // 15/16 ticked is distinguishable from none ticked.
+                if (el) el.indeterminate = !allSelected && (sel?.size ?? 0) > 0;
+              }}
+              onChange={onToggleAll}
+              className="accent-teal-600"
+            />
+            Select all
+          </label>
+          {options.map((o) => (
+            <label
+              key={o.key}
+              className="flex cursor-pointer items-center gap-2 py-1 text-xs text-zinc-600 dark:text-zinc-300"
+            >
+              <input
+                type="checkbox"
+                checked={sel === null || sel.has(o.key)}
+                onChange={() => onToggle(o.key)}
+                className="accent-teal-600"
+              />
+              <span className="flex-1 truncate">{o.label}</span>
+              <span className="shrink-0 text-zinc-400 dark:text-zinc-500">{o.count}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface CasePickerProps {
   manifest: PublicManifest | null;
   manifestError: string | null;
@@ -52,10 +124,9 @@ interface CasePickerProps {
 
 export default function CasePicker({ manifest, manifestError, selectedId, onSelect }: CasePickerProps) {
   const [view, setView] = useState<View>('type');
-  const [filter, setFilter] = useState<Filter>('All');
-  // null = all themes selected (the default; also keeps newly added themes included).
+  // null = all selected, for both filters (see TickFilter).
+  const [classSel, setClassSel] = useState<Set<string> | null>(null);
   const [themeSel, setThemeSel] = useState<Set<string> | null>(null);
-  const [themesOpen, setThemesOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const themes = useMemo<string[]>(() => {
@@ -63,10 +134,17 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     return Array.from(new Set(manifest.cases.map((c) => c.theme).filter(Boolean) as string[])).sort();
   }, [manifest]);
 
+  const classCounts = useMemo<Map<string, number>>(() => {
+    const counts = new Map<string, number>();
+    for (const c of manifest?.cases ?? []) counts.set(c.encounterType, (counts.get(c.encounterType) ?? 0) + 1);
+    return counts;
+  }, [manifest]);
+
   const classFiltered = useMemo<PublicCaseMeta[]>(() => {
     if (!manifest) return [];
-    return manifest.cases.filter((c) => filter === 'All' || c.encounterType === FILTER_TYPE[filter]);
-  }, [manifest, filter]);
+    if (classSel === null) return manifest.cases;
+    return manifest.cases.filter((c) => classSel.has(c.encounterType));
+  }, [manifest, classSel]);
 
   // Per-theme counts within the current classification filter, shown beside each tick box.
   const themeCounts = useMemo<Map<string, number>>(() => {
@@ -76,8 +154,6 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     }
     return counts;
   }, [classFiltered]);
-
-  const allThemesSelected = themeSel === null || themeSel.size === themes.length;
 
   const filtered = useMemo<PublicCaseMeta[]>(() => {
     if (themeSel === null) return classFiltered;
@@ -109,14 +185,14 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     // banks in fixed order — including empty placeholders when unfiltered.
     const sittings = entries.filter(([l]) => !BANK_ORDER.includes(l));
     const banks = entries.filter(([l]) => BANK_ORDER.includes(l));
-    if (filter === 'All' && themeSel === null && manifest) {
+    if (classSel === null && themeSel === null && manifest) {
       for (const b of BANK_ORDER) {
         if (!banks.some(([l]) => l === b)) banks.push([b, []]);
       }
     }
     banks.sort((a, b) => BANK_ORDER.indexOf(a[0]) - BANK_ORDER.indexOf(b[0]));
     return [...sittings, ...banks];
-  }, [filtered, view, filter, themeSel, manifest]);
+  }, [filtered, view, classSel, themeSel, manifest]);
 
   function switchView(v: View) {
     if (v === view) return;
@@ -124,17 +200,25 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     setExpanded(new Set());
   }
 
-  function toggleTheme(t: string) {
-    setThemeSel((prev) => {
-      const next = new Set(prev ?? themes);
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
-      return next.size === themes.length ? null : next;
-    });
+  function makeToggle(
+    all: string[],
+    setter: React.Dispatch<React.SetStateAction<Set<string> | null>>
+  ) {
+    return (key: string) =>
+      setter((prev) => {
+        const next = new Set(prev ?? all);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next.size === all.length ? null : next;
+      });
   }
 
-  function toggleSelectAll() {
-    setThemeSel(allThemesSelected ? new Set() : null);
+  function makeToggleAll(
+    sel: Set<string> | null,
+    allCount: number,
+    setter: React.Dispatch<React.SetStateAction<Set<string> | null>>
+  ) {
+    return () => setter(sel === null || sel.size === allCount ? new Set() : null);
   }
 
   function toggleGroup(label: string) {
@@ -168,7 +252,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
             Random case
           </button>
         </div>
-        <div className="mb-2 flex rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700" role="group" aria-label="Group cases by">
+        <div className="flex rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700" role="group" aria-label="Group cases by">
           {(
             [
               ['type', 'By type'],
@@ -190,73 +274,32 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap gap-1" role="group" aria-label="Filter by classification">
-          {FILTERS.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              aria-pressed={filter === f}
-              className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
-                filter === f
-                  ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-teal-950'
-                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700'
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
+        <TickFilter
+          title="Classification"
+          options={CLASSIFICATIONS.map(([key, label]) => ({
+            key,
+            label,
+            count: classCounts.get(key) ?? 0,
+          }))}
+          sel={classSel}
+          onToggle={makeToggle(
+            CLASSIFICATIONS.map(([k]) => k),
+            setClassSel
+          )}
+          onToggleAll={makeToggleAll(classSel, CLASSIFICATIONS.length, setClassSel)}
+        />
         {themes.length > 0 && (
-          <div className="mt-2 rounded-md border border-zinc-200 dark:border-zinc-700">
-            <button
-              type="button"
-              onClick={() => setThemesOpen((o) => !o)}
-              aria-expanded={themesOpen}
-              className="flex w-full items-center justify-between rounded-md px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              <span className="font-medium">Themes</span>
-              <span className="ml-2 flex shrink-0 items-center gap-1 text-zinc-400 dark:text-zinc-500">
-                {allThemesSelected ? 'All' : `${themeSel?.size ?? 0}/${themes.length}`}
-                <span className={`transition-transform ${themesOpen ? 'rotate-90' : ''}`} aria-hidden>
-                  ›
-                </span>
-              </span>
-            </button>
-            {themesOpen && (
-              <div className="max-h-52 overflow-y-auto border-t border-zinc-200 px-2 py-1 dark:border-zinc-700">
-                <label className="flex cursor-pointer items-center gap-2 py-1 text-xs font-medium text-zinc-700 dark:text-zinc-200">
-                  <input
-                    type="checkbox"
-                    checked={allThemesSelected}
-                    ref={(el) => {
-                      // Tri-state: partial selections show as indeterminate, so
-                      // 15/16 ticked is distinguishable from none ticked.
-                      if (el) el.indeterminate = !allThemesSelected && (themeSel?.size ?? 0) > 0;
-                    }}
-                    onChange={toggleSelectAll}
-                    className="accent-teal-600"
-                  />
-                  Select all
-                </label>
-                {themes.map((t) => (
-                  <label
-                    key={t}
-                    className="flex cursor-pointer items-center gap-2 py-1 text-xs text-zinc-600 dark:text-zinc-300"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={themeSel === null || themeSel.has(t)}
-                      onChange={() => toggleTheme(t)}
-                      className="accent-teal-600"
-                    />
-                    <span className="flex-1 truncate capitalize">{t.replace(/_/g, ' ')}</span>
-                    <span className="shrink-0 text-zinc-400 dark:text-zinc-500">{themeCounts.get(t) ?? 0}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
+          <TickFilter
+            title="Themes"
+            options={themes.map((t) => ({
+              key: t,
+              label: <span className="capitalize">{t.replace(/_/g, ' ')}</span>,
+              count: themeCounts.get(t) ?? 0,
+            }))}
+            sel={themeSel}
+            onToggle={makeToggle(themes, setThemeSel)}
+            onToggleAll={makeToggleAll(themeSel, themes.length, setThemeSel)}
+          />
         )}
       </div>
 
@@ -309,15 +352,12 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
                               : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
                           }`}
                         >
+                          {/* Just the title — no encounter number (internal ordering) and no
+                              theme (kept to the filter, so browsing stays exam-blind). Rows
+                              within a group are deliberately interchangeable blind picks. */}
                           <span className="min-w-0 flex-1 truncate">
                             {view === 'type' ? c.sittingLabel : c.displayTitle}
                           </span>
-                          <span className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">#{c.encounterNo}</span>
-                          {c.theme && (
-                            <span className="shrink-0 text-xs capitalize text-zinc-400 dark:text-zinc-500">
-                              {c.theme.replace(/_/g, ' ')}
-                            </span>
-                          )}
                         </button>
                       </li>
                     ))}

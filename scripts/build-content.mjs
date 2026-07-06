@@ -297,7 +297,7 @@ for (const sitting of sittings) {
       encounterType,
       skills,
       timing: TIMING[encounterType],
-      displayTitle: encounterType === 'consultation' ? 'Consultation' : `Station ${station} · ${specialty}`,
+      displayTitle: specialty, // = the system for exam cases, else the classification — station numbers are format artifacts and appear nowhere
       file: outName,
       canonicalSlugs,
     });
@@ -392,7 +392,7 @@ if (fs.existsSync(SRC_LIBRARY)) {
         encounterType,
         skills,
         timing: TIMING[encounterType],
-        displayTitle: encounterType === 'consultation' ? 'Consultation' : `Station ${station} · ${specialty}`,
+        displayTitle: specialty, // = the system for exam cases, else the classification — station numbers are format artifacts and appear nowhere
         file: outName,
         canonicalSlugs,
       });
