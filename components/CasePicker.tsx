@@ -2,11 +2,11 @@
 
 // Sidebar case picker. Nomenclature (see SPEC.md): CLASSIFICATION = consultation /
 // communication / examination; THEME = clinical topic. Both filter as tick-box
-// multi-selects with Select all. SOURCE = where the case came from (a sitting or
-// pooled bank — the row/group label). Two groupings: by type (classification,
-// default) or by source. Rows are deliberately blind: title only, no encounter
-// number, no theme. Selection is delegated to the parent, which fetches
-// /api/case/[id].
+// multi-selects with Select all. SOURCE = where the case came from (a pooled bank
+// or a real sitting). Two groupings: by type (classification, default) or by
+// source — banks first, then carousels as a two-level hospital → month/year
+// drill-down. Rows are deliberately blind: title only, no encounter number, no
+// theme. Selection is delegated to the parent, which fetches /api/case/[id].
 
 import { useMemo, useState, type ReactNode } from 'react';
 import type { EncounterType, PublicCaseMeta, PublicManifest } from '@/lib/types';
@@ -30,16 +30,22 @@ const TYPE_GROUP_ORDER = [
   'Examination · Abdominal',
 ];
 
-// The pooled standalone banks (see SPEC.md nomenclature): pinned after the
-// carousel sittings in the by-source view, in this order. Empty banks (e.g.
-// "Examination bank" today) still render as placeholders when browsing
-// unfiltered.
+// The pooled standalone banks (see SPEC.md nomenclature): FIRST in the
+// by-source view, in this order. Empty banks (e.g. "Examination bank" today)
+// still render as placeholders when browsing unfiltered.
 const BANK_ORDER = ['Consult bank', 'Communication bank', 'Examination bank'];
 
 function typeGroupOf(c: PublicCaseMeta): string {
   if (c.encounterType === 'consultation') return 'Consultation';
   if (c.encounterType === 'communication') return 'Communication';
   return `Examination · ${c.specialty}`;
+}
+
+interface HospitalGroup {
+  hospital: string;
+  total: number;
+  /** [monthYear label, cases] — chronological (manifest order) */
+  months: Array<[string, PublicCaseMeta[]]>;
 }
 
 /**
@@ -161,37 +167,65 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     return classFiltered.filter((c) => (c.theme ? themeSel.has(c.theme) : true));
   }, [classFiltered, themeSel]);
 
-  // Group by type group or by sittingLabel. Within a group, manifest order is
-  // preserved (sorted by sitting then encounterNo); same-label sittings (e.g.
-  // two same-month cycles at one hospital) merge into one group by design.
-  const groups = useMemo<Array<[string, PublicCaseMeta[]]>>(() => {
+  // By-type groups. Within a group, manifest order is preserved (sorted by
+  // sitting then encounterNo).
+  const typeGroups = useMemo<Array<[string, PublicCaseMeta[]]>>(() => {
+    if (view !== 'type') return [];
     const map = new Map<string, PublicCaseMeta[]>();
     for (const c of filtered) {
-      const key = view === 'type' ? typeGroupOf(c) : c.sittingLabel;
+      const key = typeGroupOf(c);
       const g = map.get(key);
       if (g) g.push(c);
       else map.set(key, [c]);
     }
-    const entries = Array.from(map.entries());
-    if (view === 'type') {
-      const rank = (label: string) => {
-        const i = TYPE_GROUP_ORDER.indexOf(label);
-        return i === -1 ? TYPE_GROUP_ORDER.length : i;
-      };
-      entries.sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
-      return entries;
-    }
-    // Source view: carousel sittings first (manifest order), then the pooled
-    // banks in fixed order — including empty placeholders when unfiltered.
-    const sittings = entries.filter(([l]) => !BANK_ORDER.includes(l));
-    const banks = entries.filter(([l]) => BANK_ORDER.includes(l));
-    if (classSel === null && themeSel === null && manifest) {
-      for (const b of BANK_ORDER) {
-        if (!banks.some(([l]) => l === b)) banks.push([b, []]);
+    const rank = (label: string) => {
+      const i = TYPE_GROUP_ORDER.indexOf(label);
+      return i === -1 ? TYPE_GROUP_ORDER.length : i;
+    };
+    return Array.from(map.entries()).sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]));
+  }, [filtered, view]);
+
+  // By-source tree: the pooled banks first (fixed order, empty placeholders
+  // when unfiltered), then hospitals A→Z, each drilling down into month/year
+  // sittings (chronological — manifest order is sitting-ascending). Same-month
+  // sittings at one hospital merge by design.
+  const sourceTree = useMemo<{ banks: Array<[string, PublicCaseMeta[]]>; hospitals: HospitalGroup[] }>(() => {
+    if (view !== 'source') return { banks: [], hospitals: [] };
+    const bankMap = new Map<string, PublicCaseMeta[]>();
+    const hospMap = new Map<string, Map<string, PublicCaseMeta[]>>();
+    for (const c of filtered) {
+      if (BANK_ORDER.includes(c.sittingLabel)) {
+        const g = bankMap.get(c.sittingLabel);
+        if (g) g.push(c);
+        else bankMap.set(c.sittingLabel, [c]);
+        continue;
       }
+      // Carousel label "NUH · Mar 2026" → hospital "NUH", month "Mar 2026".
+      const [hospital, monthYear] = c.sittingLabel.split(' · ');
+      let months = hospMap.get(hospital);
+      if (!months) {
+        months = new Map();
+        hospMap.set(hospital, months);
+      }
+      const g = months.get(monthYear);
+      if (g) g.push(c);
+      else months.set(monthYear, [c]);
     }
-    banks.sort((a, b) => BANK_ORDER.indexOf(a[0]) - BANK_ORDER.indexOf(b[0]));
-    return [...sittings, ...banks];
+    if (classSel === null && themeSel === null && manifest) {
+      for (const b of BANK_ORDER) if (!bankMap.has(b)) bankMap.set(b, []);
+    }
+    const banks = BANK_ORDER.filter((b) => bankMap.has(b)).map((b) => [b, bankMap.get(b)!] as [string, PublicCaseMeta[]]);
+    const hospitals = Array.from(hospMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([hospital, months]) => {
+        const monthEntries = Array.from(months.entries());
+        return {
+          hospital,
+          total: monthEntries.reduce((n, [, cs]) => n + cs.length, 0),
+          months: monthEntries,
+        };
+      });
+    return { banks, hospitals };
   }, [filtered, view, classSel, themeSel, manifest]);
 
   function switchView(v: View) {
@@ -200,10 +234,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     setExpanded(new Set());
   }
 
-  function makeToggle(
-    all: string[],
-    setter: React.Dispatch<React.SetStateAction<Set<string> | null>>
-  ) {
+  function makeToggle(all: string[], setter: React.Dispatch<React.SetStateAction<Set<string> | null>>) {
     return (key: string) =>
       setter((prev) => {
         const next = new Set(prev ?? all);
@@ -221,11 +252,11 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     return () => setter(sel === null || sel.size === allCount ? new Set() : null);
   }
 
-  function toggleGroup(label: string) {
+  function toggleGroup(key: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
@@ -235,6 +266,65 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     const pick = filtered[Math.floor(Math.random() * filtered.length)];
     onSelect(pick.id);
   }
+
+  function groupHeader(key: string, label: string, count: number, highlighted: boolean) {
+    const isOpen = expanded.has(key);
+    return (
+      <button
+        type="button"
+        onClick={() => toggleGroup(key)}
+        aria-expanded={isOpen}
+        className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+          highlighted ? 'font-medium text-teal-700 dark:text-teal-300' : 'text-zinc-700 dark:text-zinc-300'
+        }`}
+      >
+        <span className="truncate">{label}</span>
+        <span className="ml-2 flex shrink-0 items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500">
+          {count}
+          <span className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} aria-hidden>
+            ›
+          </span>
+        </span>
+      </button>
+    );
+  }
+
+  function caseRows(cases: PublicCaseMeta[]) {
+    return (
+      <ul className="mb-1 ml-2 border-l border-zinc-200 pl-1 dark:border-zinc-800">
+        {cases.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(c.id)}
+              className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm ${
+                c.id === selectedId
+                  ? 'bg-teal-50 text-teal-800 dark:bg-teal-950/50 dark:text-teal-200'
+                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+              }`}
+            >
+              {/* Just the title — no encounter number (internal ordering) and no
+                  theme (kept to the filter, so browsing stays exam-blind). Rows
+                  within a group are deliberately interchangeable blind picks. */}
+              <span className="min-w-0 flex-1 truncate">
+                {view === 'type' ? c.sittingLabel : c.displayTitle}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  const emptyNote = (
+    <p className="mb-1 ml-2 border-l border-zinc-200 py-1 pl-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+      No cases yet.
+    </p>
+  );
+
+  const hasSelected = (cases: PublicCaseMeta[]) => selectedId !== null && cases.some((c) => c.id === selectedId);
+  const nothingToShow =
+    view === 'type' ? typeGroups.length === 0 : sourceTree.banks.length === 0 && sourceTree.hospitals.length === 0;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
@@ -310,62 +400,46 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
           </p>
         ) : !manifest ? (
           <p className="mx-2 mt-2 text-sm text-zinc-500 dark:text-zinc-400">Loading cases…</p>
-        ) : groups.length === 0 ? (
+        ) : nothingToShow ? (
           <p className="mx-2 mt-2 text-sm text-zinc-500 dark:text-zinc-400">No cases match this filter.</p>
+        ) : view === 'type' ? (
+          typeGroups.map(([label, cases]) => (
+            <div key={label} className="mb-0.5">
+              {groupHeader(label, label, cases.length, hasSelected(cases))}
+              {expanded.has(label) && caseRows(cases)}
+            </div>
+          ))
         ) : (
-          groups.map(([label, cases]) => {
-            const isOpen = expanded.has(label);
-            const containsSelected = selectedId !== null && cases.some((c) => c.id === selectedId);
-            return (
+          <>
+            {sourceTree.banks.map(([label, cases]) => (
               <div key={label} className="mb-0.5">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(label)}
-                  aria-expanded={isOpen}
-                  className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-                    containsSelected ? 'font-medium text-teal-700 dark:text-teal-300' : 'text-zinc-700 dark:text-zinc-300'
-                  }`}
-                >
-                  <span className="truncate">{label}</span>
-                  <span className="ml-2 flex shrink-0 items-center gap-1 text-xs text-zinc-400 dark:text-zinc-500">
-                    {cases.length}
-                    <span className={`transition-transform ${isOpen ? 'rotate-90' : ''}`} aria-hidden>
-                      ›
-                    </span>
-                  </span>
-                </button>
-                {isOpen && cases.length === 0 && (
-                  <p className="mb-1 ml-2 border-l border-zinc-200 py-1 pl-3 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-                    No cases yet.
-                  </p>
-                )}
-                {isOpen && cases.length > 0 && (
-                  <ul className="mb-1 ml-2 border-l border-zinc-200 pl-1 dark:border-zinc-800">
-                    {cases.map((c) => (
-                      <li key={c.id}>
-                        <button
-                          type="button"
-                          onClick={() => onSelect(c.id)}
-                          className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm ${
-                            c.id === selectedId
-                              ? 'bg-teal-50 text-teal-800 dark:bg-teal-950/50 dark:text-teal-200'
-                              : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                          }`}
-                        >
-                          {/* Just the title — no encounter number (internal ordering) and no
-                              theme (kept to the filter, so browsing stays exam-blind). Rows
-                              within a group are deliberately interchangeable blind picks. */}
-                          <span className="min-w-0 flex-1 truncate">
-                            {view === 'type' ? c.sittingLabel : c.displayTitle}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                {groupHeader(label, label, cases.length, hasSelected(cases))}
+                {expanded.has(label) && (cases.length === 0 ? emptyNote : caseRows(cases))}
               </div>
-            );
-          })
+            ))}
+            {sourceTree.hospitals.map((h) => {
+              const hKey = `hosp:${h.hospital}`;
+              const hSelected = h.months.some(([, cs]) => hasSelected(cs));
+              return (
+                <div key={hKey} className="mb-0.5">
+                  {groupHeader(hKey, h.hospital, h.total, hSelected)}
+                  {expanded.has(hKey) && (
+                    <div className="ml-2 border-l border-zinc-200 pl-1 dark:border-zinc-800">
+                      {h.months.map(([monthYear, cases]) => {
+                        const mKey = `${h.hospital} · ${monthYear}`;
+                        return (
+                          <div key={mKey}>
+                            {groupHeader(mKey, monthYear, cases.length, hasSelected(cases))}
+                            {expanded.has(mKey) && caseRows(cases)}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
     </section>
