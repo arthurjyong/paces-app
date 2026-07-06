@@ -9,6 +9,9 @@ export type EncounterType = 'examination' | 'communication' | 'consultation';
 export interface CaseMeta {
   /** "<sitting>__<encounterNo>": carousel "2024-03_CGH_Cx__4", library "LIB_<collection>__12" */
   id: string;
+  /** stable OPAQUE case code from ../_index/case_ids.json ("c0001"…) — the user-facing case ID,
+   *  shown as "#c0001"; survives renames/moves, carries no content or provenance meaning */
+  caseCode: string;
   /** source directory name: a dated sitting ("2024-03_CGH_Cx") or a synthetic "LIB_<collection>" */
   sitting: string;
   /** human label — hospital + month for carousels ("CGH · Mar 2024"; same-month sittings share a

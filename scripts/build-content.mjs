@@ -17,6 +17,8 @@ const SRC_RUBRIC = path.join(CORPUS_ROOT, '5_Carousels_PACES23', 'MARKING_RUBRIC
 // Standalone case library (Tier-1 content expansion): _case_library/<collection>/NNN_Station<S>_<Specialty>.md
 // — distilled/enriched cases that are NOT part of a dated carousel sitting. Ingested additively below.
 const SRC_LIBRARY = path.join(CORPUS_ROOT, '_case_library');
+// Stable opaque case ids (c0001…), maintained by ../_index (survive renames/moves).
+const SRC_CASE_IDS = path.join(CORPUS_ROOT, '_index', 'case_ids.json');
 
 const OUT = path.join(APP_ROOT, 'content');
 const OUT_CASES = path.join(OUT, 'cases');
@@ -172,6 +174,14 @@ const TIMING = {
   consultation: '5 min reading + 15 min + 5 min Q&A',
 };
 
+const caseIdMap = JSON.parse(fs.readFileSync(SRC_CASE_IDS, 'utf8'));
+/** Stable opaque code (c0001…) for a served case — every served case MUST have one. */
+function caseCodeFor(id) {
+  const code = caseIdMap[id];
+  if (!code) fail(`no stable case id in _index/case_ids.json for "${id}" — rerun the id assignment or fix the key migration`);
+  return code;
+}
+
 function sittingLabelFrom(sitting) {
   // e.g. "2024-03_CGH_Cx" -> "CGH · Mar 2024". The dir-name suffix (Cx / CycleN /
   // AM / PM) distinguishes same-month carousels in the source tree but is a format
@@ -289,6 +299,7 @@ for (const sitting of sittings) {
 
     cases.push({
       id: `${sitting}__${encounterNo}`,
+      caseCode: caseCodeFor(`${sitting}__${encounterNo}`),
       sitting,
       sittingLabel,
       encounterNo,
@@ -384,6 +395,7 @@ if (fs.existsSync(SRC_LIBRARY)) {
       bankCounters[encounterType] += 1;
       cases.push({
         id: `LIB_${collection}__${fileNo}`,
+        caseCode: caseCodeFor(`LIB_${collection}__${fileNo}`),
         sitting: `LIB_${collection}`,
         sittingLabel: BANK_LABELS[encounterType],
         encounterNo: bankCounters[encounterType],
@@ -436,4 +448,7 @@ for (const c of [cases.find((c) => c.encounterType === 'examination'), cases.fin
 if (carouselCount + placeholders.length !== 296) fail(`carousel structure changed: ${carouselCount} served + ${placeholders.length} empty slots !== 296 (the fixed 37-carousel × 8 loop)`);
 if (canonicalFiles.length < 156) fail(`canonical count ${canonicalFiles.length} < 156 (notes may be added but never lost)`);
 if (stemFailures.length > 0) fail(`${stemFailures.length} case file(s) without a non-empty Candidate stem (listed above)`);
+// case_ids.json is externally maintained — a botched key migration could map two
+// cases to one code, silently breaking the "unique, referable" case-ID contract.
+if (new Set(cases.map((c) => c.caseCode)).size !== cases.length) fail('duplicate caseCode values — check _index/case_ids.json for a bad key migration');
 console.log('OK');

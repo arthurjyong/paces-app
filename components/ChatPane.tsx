@@ -110,8 +110,13 @@ export default function ChatPane({
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-sm font-semibold">{meta.displayTitle}</h1>
-          <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-            {meta.sittingLabel} · {meta.timing}
+          <p className="flex text-xs text-zinc-500 dark:text-zinc-400">
+            {/* The case code must survive narrow widths (it's how a user reports a
+                case mid-encounter), so it sits outside the truncating segment. */}
+            <span className="truncate">
+              {meta.sittingLabel} · {meta.timing}
+            </span>
+            <span className="shrink-0">&nbsp;· #{meta.caseCode}</span>
           </p>
         </div>
         <button

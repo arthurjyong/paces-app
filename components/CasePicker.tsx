@@ -5,8 +5,9 @@
 // multi-selects with Select all. SOURCE = where the case came from (a pooled bank
 // or a real sitting). Two groupings: by type (classification, default) or by
 // source — banks first, then carousels as a two-level hospital → month/year
-// drill-down. Rows are deliberately blind: title only, no encounter number, no
-// theme. Selection is delegated to the parent, which fetches /api/case/[id].
+// drill-down. Rows are deliberately blind: title + the opaque case code only —
+// no encounter number, no theme. Selection is delegated to the parent, which
+// fetches /api/case/[id].
 
 import { useMemo, useState, type ReactNode } from 'react';
 import type { EncounterType, PublicCaseMeta, PublicManifest } from '@/lib/types';
@@ -44,7 +45,8 @@ function typeGroupOf(c: PublicCaseMeta): string {
 interface HospitalGroup {
   hospital: string;
   total: number;
-  /** [monthYear label, cases] — chronological (manifest order) */
+  /** [monthYear label, cases] — month tuples chronological (manifest order);
+   *  cases within a month sorted alphabetically by displayTitle */
   months: Array<[string, PublicCaseMeta[]]>;
 }
 
@@ -219,6 +221,9 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([hospital, months]) => {
         const monthEntries = Array.from(months.entries());
+        // Within a date, sort by the displayed word (Abdominal → … → Respiratory),
+        // not by station/encounter order (per Arthur — station order is meaningless).
+        for (const [, cs] of monthEntries) cs.sort((a, b) => a.displayTitle.localeCompare(b.displayTitle));
         return {
           hospital,
           total: monthEntries.reduce((n, [, cs]) => n + cs.length, 0),
@@ -303,12 +308,14 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
                   : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
               }`}
             >
-              {/* Just the title — no encounter number (internal ordering) and no
-                  theme (kept to the filter, so browsing stays exam-blind). Rows
-                  within a group are deliberately interchangeable blind picks. */}
+              {/* Title + the stable opaque case ID (#c0001…) — no encounter number
+                  and no theme (kept to the filter, so browsing stays exam-blind).
+                  The code carries no content meaning; it just makes a case
+                  referable ("c0421 had a bad answer key"). */}
               <span className="min-w-0 flex-1 truncate">
                 {view === 'type' ? c.sittingLabel : c.displayTitle}
               </span>
+              <span className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">#{c.caseCode}</span>
             </button>
           </li>
         ))}
