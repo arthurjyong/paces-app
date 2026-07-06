@@ -70,28 +70,48 @@ function stripQuotes(s) {
 // must never reach the candidate. This mirrors the IDENTICAL strip in
 // lib/content.ts getCaseStem (the runtime parser that actually serves the stem)
 // so build validation sees the same text the client will.
-const SPOILER_NOTE_MARKER = /^\s*(?:>\s*)*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
-const SPOILER_NOTE_HEADING = /^\s*#{3,}\s*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
+const SPOILER_NOTE_MARKER = /^\s*(?:>\s*)*[*_([]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note|synopsis)/i;
+const SPOILER_NOTE_HEADING = /^\s*#{3,}\s*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note|synopsis)/i;
+// Block-level tutor-voice tells (a 503-stem audit found these formulaic leaks);
+// keep IDENTICAL to lib/content.ts.
+const SPOILER_META_BLOCK = new RegExp(
+  [
+    '\\b(communication|consultation)[\\w /&+-]{0,40} station\\s*:',
+    'the candidate (must|should|is expected|will be)',
+    'the framework is|the marking hinges|the marks are (won|in)|marks live',
+    'for tutor|do not volunteer|do not read (aloud )?to (the )?candidate|not to be read',
+  ].join('|'),
+  'i'
+);
+const SPOILER_RECALL_ASIDE = /^\s*(?:>\s*)*[*_]*\[[^\]]*recall/i;
 let spoilerNotesStripped = 0;
 
 function stripSpoilerNotes(body) {
   const out = [];
   let i = 0;
   while (i < body.length) {
+    if (body[i].trim() === '') {
+      out.push(body[i]);
+      i++;
+      continue;
+    }
     if (SPOILER_NOTE_HEADING.test(body[i])) {
       spoilerNotesStripped++;
       i++;
       while (i < body.length && !/^\s*#/.test(body[i])) i++;
       continue;
     }
-    if (SPOILER_NOTE_MARKER.test(body[i])) {
-      spoilerNotesStripped++;
-      const isQuote = /^\s*>/.test(body[i]);
-      while (i < body.length && body[i].trim() !== '' && (!isQuote || /^\s*>/.test(body[i]))) i++;
-      continue;
-    }
-    out.push(body[i]);
-    i++;
+    const isQuote = /^\s*>/.test(body[i]);
+    let j = i;
+    while (j < body.length && body[j].trim() !== '' && (!isQuote || /^\s*>/.test(body[j]))) j++;
+    const block = body.slice(i, j);
+    const spoiler =
+      SPOILER_NOTE_MARKER.test(block[0]) ||
+      SPOILER_RECALL_ASIDE.test(block[0]) ||
+      SPOILER_META_BLOCK.test(block.join('\n'));
+    if (spoiler) spoilerNotesStripped++;
+    else out.push(...block);
+    i = j;
   }
   return out;
 }

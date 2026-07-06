@@ -148,28 +148,51 @@ const caseStemCache = new Map<string, string>();
  * candidate's door note (invariant 1). Keep this marker list in sync with the
  * identical strip in scripts/build-content.mjs (validation parity).
  */
-const SPOILER_NOTE_MARKER = /^\s*(?:>\s*)*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
-const SPOILER_NOTE_HEADING = /^\s*#{3,}\s*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note)/i;
+const SPOILER_NOTE_MARKER = /^\s*(?:>\s*)*[*_([]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note|synopsis)/i;
+const SPOILER_NOTE_HEADING = /^\s*#{3,}\s*[*_]*\s*(tutor note|tutor's note|examiner note|teaching point|recollection note|synopsis)/i;
+// Block-level tutor-voice tells (a 503-stem audit found these formulaic leaks):
+// "(Communication station: … the candidate must …)" trailing meta paragraphs,
+// third-person "the candidate must/should…" commentary (door notes say "you"),
+// "for tutor"/"do not volunteer"-style asides, and bracketed recall-
+// reconstruction notes ("[… recall … the syndrome — X — is the answer]").
+const SPOILER_META_BLOCK = new RegExp(
+  [
+    '\\b(communication|consultation)[\\w /&+-]{0,40} station\\s*:',
+    'the candidate (must|should|is expected|will be)',
+    'the framework is|the marking hinges|the marks are (won|in)|marks live',
+    'for tutor|do not volunteer|do not read (aloud )?to (the )?candidate|not to be read',
+  ].join('|'),
+  'i'
+);
+const SPOILER_RECALL_ASIDE = /^\s*(?:>\s*)*[*_]*\[[^\]]*recall/i;
 
 function stripSpoilerNotes(body: string[]): string[] {
   const out: string[] = [];
   let i = 0;
   while (i < body.length) {
+    if (body[i].trim() === '') {
+      out.push(body[i]);
+      i++;
+      continue;
+    }
     if (SPOILER_NOTE_HEADING.test(body[i])) {
       // A "### Examiner note" subsection: skip until the next heading (or end).
       i++;
       while (i < body.length && !/^\s*#/.test(body[i])) i++;
       continue;
     }
-    if (SPOILER_NOTE_MARKER.test(body[i])) {
-      const isQuote = /^\s*>/.test(body[i]);
-      // Skip the whole contiguous block: for a blockquote, consecutive ">"
-      // lines; for a plain paragraph, lines until the next blank line.
-      while (i < body.length && body[i].trim() !== '' && (!isQuote || /^\s*>/.test(body[i]))) i++;
-      continue;
-    }
-    out.push(body[i]);
-    i++;
+    // Gather the contiguous block (a blockquote = consecutive ">" lines; a
+    // paragraph = lines until the next blank line), then judge it whole.
+    const isQuote = /^\s*>/.test(body[i]);
+    let j = i;
+    while (j < body.length && body[j].trim() !== '' && (!isQuote || /^\s*>/.test(body[j]))) j++;
+    const block = body.slice(i, j);
+    const spoiler =
+      SPOILER_NOTE_MARKER.test(block[0]) ||
+      SPOILER_RECALL_ASIDE.test(block[0]) ||
+      SPOILER_META_BLOCK.test(block.join('\n'));
+    if (!spoiler) out.push(...block);
+    i = j;
   }
   return out;
 }
