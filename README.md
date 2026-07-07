@@ -4,6 +4,18 @@ A shareable, BYOK (bring-your-own-key) web app for practising MRCP PACES with an
 
 Built on Next.js (App Router) + the Anthropic API. The candidate's browser only ever sees the case stem and the examiner's replies — expected findings, model answers, and the answer key stay server-side.
 
+## Features
+
+- **503 practice encounters** across consultation, communication, and examination stations, filterable by classification / clinical theme / source, browsable by type or by past-year sitting. Every case has a stable opaque code (`#c0001…`).
+- **AI examiner + simulated patient** grounded on the hidden case file and per-condition reference notes: reveals findings only as you examine, runs the viva, then marks against the official PACES rubric as a structured per-skill (A–G) marksheet with justifications.
+- **Clinical-image reveal** — for cases where a sign is something you *see*, the examiner surfaces a real photo in-chat once you examine that region (same discipline as text findings; never on the stem).
+- **Crash-safe transcripts** — the live encounter (case, transcript, revealed photos, marksheet) autosaves to the browser and restores on reload, so an accidental refresh never wipes your work. Fully client-side; the backend stays stateless.
+- **History** — finished or parked encounters are archived in the browser (IndexedDB); reopen one read-only or continue an unmarked case where you left off.
+- **Model picker** — Sonnet 4.6 by default, Opus 4.8 / Haiku 4.5 selectable; cost is the user's dial.
+- **Two access paths** — bring your own Anthropic key (kept only in your browser), or, for owner-invited users, a passwordless email sign-in that spends a server-held, spend-capped key (see *Demo access* below).
+
+All state a user creates lives in their own browser; the server stores nothing and never sees a stored transcript.
+
 ## Run it locally
 
 ```bash
