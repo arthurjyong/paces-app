@@ -1,8 +1,8 @@
 // Server-only demo-access gate: signed magic-link tokens, the demo_session
 // cookie, whitelist checks, best-effort rate limiting, and sign-in email
 // delivery. Nothing in this module may be imported by client components — it
-// reads AUTH_SECRET and DEMO_ANTHROPIC_API_KEY (which must never reach the
-// client in any form, mirroring invariant 2 for BYOK keys).
+// reads AUTH_SECRET and the per-provider DEMO_*_API_KEY vars (which must never
+// reach the client in any form, mirroring invariant 2 for BYOK keys).
 //
 // Trust model (stateless — no DB): a token is
 //   base64url(JSON{email, purpose, exp}) + '.' + base64url(HMAC-SHA256(AUTH_SECRET, payload))
@@ -16,6 +16,8 @@
 import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 import { createTransport } from 'nodemailer';
+import type { ProviderId } from './types';
+import { demoKeyForProvider, demoProviders } from './providers';
 
 /** httpOnly cookie holding the signed 'session' token. */
 export const DEMO_SESSION_COOKIE = 'demo_session';
@@ -45,14 +47,15 @@ export function isWhitelisted(email: string): boolean {
 
 /**
  * Demo mode exists only when fully configured: an HMAC secret to sign with, a
- * server-held key to spend, and at least one whitelisted email. Anything less
- * and every demo endpoint behaves as if the feature were absent (generic
- * responses only — never an error that reveals server configuration).
+ * server-held key to spend (for at least one provider), and at least one
+ * whitelisted email. Anything less and every demo endpoint behaves as if the
+ * feature were absent (generic responses only — never an error that reveals
+ * server configuration).
  */
 export function demoModeEnabled(): boolean {
   return (
     Boolean(process.env.AUTH_SECRET) &&
-    Boolean(process.env.DEMO_ANTHROPIC_API_KEY?.trim()) &&
+    demoProviders().length > 0 &&
     getWhitelist().length > 0
   );
 }
@@ -191,13 +194,15 @@ export async function readDemoSession(): Promise<string | null> {
 }
 
 /**
- * The server-held demo key — released ONLY behind a valid demo session and only
- * to server code (it goes straight into the Anthropic SDK constructor, exactly
- * like a BYOK key, and must never appear in any client-visible payload, log,
- * or error).
+ * The server-held demo key for one provider — released ONLY behind a valid
+ * demo session and only to server code (it goes straight into the Anthropic
+ * SDK constructor, exactly like a BYOK key, and must never appear in any
+ * client-visible payload, log, or error). A provider without its DEMO_* env
+ * var set simply has no invited-access coverage (null), while other providers
+ * keep working.
  */
-export async function getDemoApiKey(): Promise<string | null> {
-  const serverKey = process.env.DEMO_ANTHROPIC_API_KEY?.trim();
+export async function getDemoApiKey(provider: ProviderId): Promise<string | null> {
+  const serverKey = demoKeyForProvider(provider);
   if (!serverKey) return null;
   return (await readDemoSession()) ? serverKey : null;
 }

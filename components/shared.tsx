@@ -90,8 +90,8 @@ const LS_ENCOUNTER = 'paces.encounter';
  * Snapshot of the live encounter, autosaved on every change so a reload
  * (accidental pull-to-refresh, crash) can restore it. Carries the stem so
  * restore needs no network fetch; meta is rebuilt fresh from the manifest.
- * The API key lives in its own slot (`paces.apiKey`) and must NEVER be
- * folded into this blob.
+ * API keys live in their own per-provider slots (`paces.apiKey`,
+ * `paces.apiKey.<provider>`) and must NEVER be folded into this blob.
  */
 export interface SavedEncounter {
   v: 1;

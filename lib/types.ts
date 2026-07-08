@@ -147,21 +147,70 @@ export interface ApiError {
 /** term (lowercased) -> canonical slugs (without .md) */
 export type KbLookup = Record<string, string[]>;
 
-export const MODEL_ALLOWLIST = [
-  'claude-sonnet-4-6',
-  'claude-opus-4-8',
-  'claude-haiku-4-5-20251001',
-] as const;
+// ---------------------------------------------------------------------------
+// Model / provider registry (client-safe — labels and ids only; base URLs and
+// server-held key config live in the server-only lib/providers.ts)
+// ---------------------------------------------------------------------------
 
-export const DEFAULT_MODEL: (typeof MODEL_ALLOWLIST)[number] = 'claude-sonnet-4-6';
+/**
+ * Providers the backend can call. All non-Anthropic entries expose an
+ * Anthropic-Messages-compatible endpoint, so the same @anthropic-ai/sdk client
+ * serves every provider — the server only switches baseURL + API key by the
+ * selected model (the client never controls a URL; see SPEC.md).
+ */
+export type ProviderId = 'anthropic' | 'deepseek' | 'moonshot' | 'minimax';
 
-export const MODEL_LABELS: Record<(typeof MODEL_ALLOWLIST)[number], string> = {
-  'claude-sonnet-4-6': 'Sonnet 4.6 (recommended)',
-  'claude-opus-4-8': 'Opus 4.8 (deeper marking, ~5× cost)',
-  'claude-haiku-4-5-20251001': 'Haiku 4.5 (cheapest, lighter viva)',
-};
+export interface ProviderInfo {
+  id: ProviderId;
+  label: string;
+  /** where a user creates an API key for this provider (shown in Settings) */
+  keyConsoleUrl: string;
+  keyPlaceholder: string;
+}
 
-/** Client sends the user's Anthropic key in this header on every /api/examiner call. */
+export const PROVIDERS: readonly ProviderInfo[] = [
+  { id: 'anthropic', label: 'Anthropic', keyConsoleUrl: 'https://console.anthropic.com/', keyPlaceholder: 'sk-ant-…' },
+  { id: 'deepseek', label: 'DeepSeek', keyConsoleUrl: 'https://platform.deepseek.com/', keyPlaceholder: 'sk-…' },
+  { id: 'moonshot', label: 'Moonshot (Kimi)', keyConsoleUrl: 'https://platform.moonshot.ai/', keyPlaceholder: 'sk-…' },
+  { id: 'minimax', label: 'MiniMax', keyConsoleUrl: 'https://platform.minimax.io/', keyPlaceholder: '…' },
+];
+
+export function providerInfo(id: ProviderId): ProviderInfo {
+  // The registry is a fixed literal covering every ProviderId — find can't miss.
+  return PROVIDERS.find((p) => p.id === id) as ProviderInfo;
+}
+
+export interface ModelInfo {
+  /** wire model id sent upstream — unique across ALL providers by convention */
+  id: string;
+  provider: ProviderId;
+  /** picker label; includes a rough per-case cost hint (the user's cost dial) */
+  label: string;
+}
+
+export const MODELS: readonly ModelInfo[] = [
+  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Sonnet 4.6 (recommended · ~$0.30/case)' },
+  { id: 'claude-opus-4-8', provider: 'anthropic', label: 'Opus 4.8 (deeper marking · ~5× cost)' },
+  { id: 'claude-haiku-4-5-20251001', provider: 'anthropic', label: 'Haiku 4.5 (lighter viva · ~$0.10/case)' },
+  // Budget tier — Anthropic-compatible endpoints; ids + pricing doc-verified
+  // 2026-07-08 (do NOT use the deepseek-chat/reasoner aliases: hard-deprecated
+  // 2026-07-24).
+  { id: 'deepseek-v4-flash', provider: 'deepseek', label: 'DeepSeek V4 Flash (cheapest · ~$0.01/case)' },
+  { id: 'deepseek-v4-pro', provider: 'deepseek', label: 'DeepSeek V4 Pro (budget · ~$0.02/case)' },
+  { id: 'kimi-k2.6', provider: 'moonshot', label: 'Kimi K2.6 (best budget roleplay · ~$0.15/case)' },
+  { id: 'MiniMax-M3', provider: 'minimax', label: 'MiniMax M3 (~$0.06/case)' },
+];
+
+export const MODEL_ALLOWLIST: readonly string[] = MODELS.map((m) => m.id);
+
+export const DEFAULT_MODEL = 'claude-sonnet-4-6';
+
+/** Provider of an allowlisted model id; undefined for anything else. */
+export function modelProvider(model: string): ProviderId | undefined {
+  return MODELS.find((m) => m.id === model)?.provider;
+}
+
+/** Client sends the SELECTED MODEL'S PROVIDER API key in this header on every /api/examiner call. */
 export const API_KEY_HEADER = 'x-user-api-key';
 
 // ---------------------------------------------------------------------------
@@ -188,4 +237,10 @@ export interface DemoRequestResponse {
 export interface DemoStatus {
   active: boolean;
   email?: string;
+  /**
+   * Providers the invited-access server key covers (present only when active).
+   * Lets the client warn before a model whose provider has no server-held key
+   * is used keylessly. Absent/empty ⇒ assume the historical Anthropic-only setup.
+   */
+  providers?: ProviderId[];
 }

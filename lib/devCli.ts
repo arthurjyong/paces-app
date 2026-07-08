@@ -29,7 +29,7 @@ import type {
   ExaminerMarkResponse,
   TokenUsage,
 } from './types';
-import { buildMarkSheet } from './marksheet';
+import { buildMarkSheet, extractJson, markInstruction } from './marksheet';
 import { extractRevealedImages } from './images';
 
 const execFileAsync = promisify(execFile);
@@ -58,13 +58,6 @@ function serializeTranscript(transcript: ChatMessage[]): string {
   return transcript
     .map((m) => `[${m.role === 'user' ? 'CANDIDATE' : 'EXAMINER'}]: ${m.content}`)
     .join('\n\n');
-}
-
-function markInstruction(meta: CaseMeta): string {
-  return `The encounter is over. Complete the marksheet now, based strictly on the transcript above and graded per the marking rubric.
-Respond with ONLY a JSON object — no prose, no code fences — of exactly this shape:
-{"skills":[{"skill":"A","grade":2,"justification":"..."}],"overallImpression":"...","biggestImprovement":"..."}
-Rules: one "skills" entry per marked skill — this encounter marks exactly: ${meta.skills.join(', ')}. "grade" is an integer: 2 = Satisfactory, 1 = Borderline, 0 = Unsatisfactory. Every Borderline or Unsatisfactory needs a one-line justification tied to the rubric descriptors. "biggestImprovement" names the single change that would most improve the weakest skill.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,18 +162,6 @@ export async function runCliChat(
     return { error: 'The examiner returned no reply — try again', status: 502 };
   }
   return { reply, kbLookups: 0, usage: result.usage, images: revealed.length ? revealed : undefined };
-}
-
-/** Pull the outermost JSON object out of a possibly fenced / prefixed reply. */
-function extractJson(text: string): unknown {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end <= start) return null;
-  try {
-    return JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return null;
-  }
 }
 
 export async function runCliMark(

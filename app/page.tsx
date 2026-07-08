@@ -18,6 +18,9 @@ import {
   API_KEY_HEADER,
   DEFAULT_MODEL,
   MODEL_ALLOWLIST,
+  modelProvider,
+  providerInfo,
+  type ProviderId,
   type ApiError,
   type ChatMessage,
   type DemoStatus,
@@ -41,11 +44,20 @@ import {
   type ArchivedEncounter,
 } from '@/components/historyStore';
 
+// Per-provider BYOK key slots. The Anthropic key keeps its historical
+// un-suffixed slot so existing users' keys survive this change.
 const LS_API_KEY = 'paces.apiKey';
 const LS_MODEL = 'paces.model';
 
-const NO_KEY_ERROR =
-  'Invited by the app owner? Sign in under "Invited access" in the sidebar — no API key needed. Otherwise add your Anthropic API key in Settings.';
+function noKeyError(provider: ProviderId): string {
+  return `Invited by the app owner? Sign in under "Invited access" in the sidebar — no API key needed. Otherwise add your ${providerInfo(provider).label} API key in Settings.`;
+}
+
+/** A signed-in invited user whose session doesn't cover this model's provider needs "switch model" guidance, not a sign-in prompt (mirrors the server's 403). */
+function demoUncoveredError(provider: ProviderId): string {
+  const label = providerInfo(provider).label;
+  return `Invited access doesn't cover ${label} models — pick a different model in Settings, or add your own ${label} API key.`;
+}
 
 const SESSION_EXPIRED_ERROR =
   'Your sign-in has expired or been revoked — request a new sign-in link under "Invited access" in the sidebar.';
@@ -79,8 +91,24 @@ function retryNotice(entries: TranscriptEntry[], marksheet: MarkSheet | null): s
 }
 
 export default function Home() {
-  // Settings (persisted to localStorage).
-  const [apiKey, updateApiKey] = useLocalStorage(LS_API_KEY, '');
+  // Settings (persisted to localStorage). One BYOK key slot per provider —
+  // fixed hooks (never map over PROVIDERS here: hook order must be static).
+  const [anthropicKey, setAnthropicKey] = useLocalStorage(LS_API_KEY, '');
+  const [deepseekKey, setDeepseekKey] = useLocalStorage('paces.apiKey.deepseek', '');
+  const [moonshotKey, setMoonshotKey] = useLocalStorage('paces.apiKey.moonshot', '');
+  const [minimaxKey, setMinimaxKey] = useLocalStorage('paces.apiKey.minimax', '');
+  const providerKeys: Record<ProviderId, string> = {
+    anthropic: anthropicKey,
+    deepseek: deepseekKey,
+    moonshot: moonshotKey,
+    minimax: minimaxKey,
+  };
+  const setProviderKey = (provider: ProviderId, value: string) => {
+    if (provider === 'anthropic') setAnthropicKey(value);
+    else if (provider === 'deepseek') setDeepseekKey(value);
+    else if (provider === 'moonshot') setMoonshotKey(value);
+    else setMinimaxKey(value);
+  };
   const [storedModel, setStoredModel] = useLocalStorage(LS_MODEL, DEFAULT_MODEL);
   const model = (MODEL_ALLOWLIST as readonly string[]).includes(storedModel) ? storedModel : DEFAULT_MODEL;
 
@@ -149,10 +177,34 @@ export default function Home() {
   const [cliBridge, setCliBridge] = useState(false);
 
   const demoActive = demoStatus?.active === true;
-  // With demo access active, the chat works without a BYOK key (the server
-  // holds the demo key behind the signed cookie — it never reaches this client).
-  // The dev CLI bridge likewise serves keyless requests, dev-only.
-  const hasKey = apiKey.trim().length > 0 || demoActive || cliBridge;
+  // The selected model picks the provider, which picks the BYOK key slot the
+  // examiner calls send. `apiKey` everywhere below = the ACTIVE provider's key.
+  // (Explicit ternary, not providerKeys[activeProvider]: computed member
+  // access on the fresh record makes React Compiler bail on the whole
+  // component — 16 preserve-manual-memoization errors.)
+  const activeProvider: ProviderId = modelProvider(model) ?? 'anthropic';
+  const apiKey =
+    activeProvider === 'anthropic'
+      ? anthropicKey
+      : activeProvider === 'deepseek'
+        ? deepseekKey
+        : activeProvider === 'moonshot'
+          ? moonshotKey
+          : minimaxKey;
+  // With demo access active, the chat works without a BYOK key — but only for
+  // models whose provider the server-held keys cover. A missing or empty
+  // providers list means an older server: assume the historical Anthropic-only
+  // setup. The dev CLI bridge serves keyless requests (dev-only), Claude only.
+  const demoProviderList = demoStatus?.providers;
+  const demoCovers =
+    demoActive &&
+    (demoProviderList?.length ? demoProviderList : ['anthropic']).includes(activeProvider);
+  const cliBridgeCovers = cliBridge && activeProvider === 'anthropic';
+  const hasKey = apiKey.trim().length > 0 || demoCovers || cliBridgeCovers;
+  // Precomputed at render scope: helper calls with component-scope args inside
+  // the callbacks defeat React Compiler memoization preservation.
+  const keyMissingError =
+    demoActive && !demoCovers ? demoUncoveredError(activeProvider) : noKeyError(activeProvider);
 
   const updateModel = useCallback(
     (value: string) => {
@@ -413,11 +465,12 @@ export default function Home() {
   const runChat = useCallback(
     async (transcript: TranscriptEntry[]) => {
       if (!publicCase) return;
-      // BYOK key takes precedence; with none, a demo session (or the dev-only
-      // CLI bridge) lets the server handle the call without a client key.
+      // BYOK key takes precedence; with none, a demo session covering this
+      // model's provider (or the dev-only CLI bridge, Anthropic models only)
+      // lets the server handle the call without a client key.
       const key = apiKey.trim();
-      if (!key && !demoActive && !cliBridge) {
-        setError(NO_KEY_ERROR);
+      if (!key && !demoCovers && !cliBridgeCovers) {
+        setError(keyMissingError);
         return;
       }
       const caseId = publicCase.meta.id;
@@ -436,7 +489,7 @@ export default function Home() {
           body: JSON.stringify(body),
         });
         const data = await readJson(res);
-        if (res.status === 401 && !key && !cliBridge) {
+        if (res.status === 401 && !key && !cliBridgeCovers) {
           // Keyless request means we relied on the demo session, so a 401 is
           // expiry/revocation — the server's "Missing API key" would send a
           // keyless invited user hunting for a key. Re-sync the sidebar too.
@@ -468,7 +521,7 @@ export default function Home() {
         setPending(null);
       }
     },
-    [publicCase, apiKey, demoActive, cliBridge, model, refreshDemoStatus],
+    [publicCase, apiKey, demoCovers, cliBridgeCovers, keyMissingError, model, refreshDemoStatus],
   );
 
   const send = useCallback(
@@ -498,8 +551,8 @@ export default function Home() {
   const mark = useCallback(async () => {
     if (!publicCase || pending || caseLoading || transitionRef.current || entries.length === 0) return;
     const key = apiKey.trim();
-    if (!key && !demoActive && !cliBridge) {
-      setError(NO_KEY_ERROR);
+    if (!key && !demoCovers && !cliBridgeCovers) {
+      setError(keyMissingError);
       return;
     }
     setPending('mark');
@@ -517,7 +570,7 @@ export default function Home() {
         body: JSON.stringify(body),
       });
       const data = await readJson(res);
-      if (res.status === 401 && !key && !cliBridge) {
+      if (res.status === 401 && !key && !cliBridgeCovers) {
         // See runChat: keyless 401 = demo session expired/revoked.
         void refreshDemoStatus();
         throw new Error(SESSION_EXPIRED_ERROR);
@@ -531,7 +584,7 @@ export default function Home() {
     } finally {
       setPending(null);
     }
-  }, [publicCase, pending, caseLoading, entries, apiKey, demoActive, cliBridge, model, refreshDemoStatus]);
+  }, [publicCase, pending, caseLoading, entries, apiKey, demoCovers, cliBridgeCovers, keyMissingError, model, refreshDemoStatus]);
 
   const newCase = useCallback(() => {
     if (pending || caseLoading || transitionRef.current) return;
@@ -605,7 +658,7 @@ export default function Home() {
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             {demoActive
               ? 'AI examiner · invited access active'
-              : cliBridge && !apiKey.trim()
+              : cliBridgeCovers && !apiKey.trim()
                 ? 'AI examiner · dev bridge (subscription quota)'
                 : 'AI examiner for MRCP PACES'}
           </p>
@@ -614,10 +667,11 @@ export default function Home() {
             task is signing in, not pasting an API key. */}
         <DemoAccess status={demoStatus} />
         <Settings
-          apiKey={apiKey}
+          providerKeys={providerKeys}
           model={model}
-          demoActive={demoActive}
-          onApiKeyChange={updateApiKey}
+          activeProvider={activeProvider}
+          demoCovers={demoCovers}
+          onProviderKeyChange={setProviderKey}
           onModelChange={updateModel}
         />
         <HistoryList
@@ -681,6 +735,7 @@ export default function Home() {
           marksheet={marksheet}
           markUsage={markUsage}
           hasKey={hasKey}
+          keyNotice={keyMissingError}
           onBegin={begin}
           onSend={send}
           onMark={() => void mark()}
