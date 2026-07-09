@@ -1,6 +1,6 @@
 'use client';
 
-// PACES Practice — single-page client app.
+// PACES Buddy — single-page client app.
 // Holds all state (settings, manifest, selected case, transcript, marksheet,
 // managed-session status) and talks to the backend exclusively via
 // GET /api/manifest, GET /api/case/[id], POST /api/examiner, and the
@@ -17,6 +17,7 @@ import {
 } from '@/components/shared';
 import {
   API_KEY_HEADER,
+  BYOK_MODELS,
   DEFAULT_MODEL,
   MODEL_ALLOWLIST,
   modelProvider,
@@ -92,32 +93,12 @@ function retryNotice(entries: TranscriptEntry[], marksheet: MarkSheet | null): s
 }
 
 export default function Home() {
-  // Settings (persisted to localStorage). One BYOK key slot per provider —
-  // fixed hooks (never map over PROVIDERS here: hook order must be static).
-  const [gatewayKey, setGatewayKey] = useLocalStorage('paces.apiKey.gateway', '');
-  const [anthropicKey, setAnthropicKey] = useLocalStorage(LS_API_KEY, '');
-  const [openrouterKey, setOpenrouterKey] = useLocalStorage('paces.apiKey.openrouter', '');
-  const [deepseekKey, setDeepseekKey] = useLocalStorage('paces.apiKey.deepseek', '');
-  const [moonshotKey, setMoonshotKey] = useLocalStorage('paces.apiKey.moonshot', '');
-  const [minimaxKey, setMinimaxKey] = useLocalStorage('paces.apiKey.minimax', '');
-  const providerKeys: Record<ProviderId, string> = {
-    gateway: gatewayKey,
-    anthropic: anthropicKey,
-    openrouter: openrouterKey,
-    deepseek: deepseekKey,
-    moonshot: moonshotKey,
-    minimax: minimaxKey,
-  };
-  const setProviderKey = (provider: ProviderId, value: string) => {
-    if (provider === 'gateway') setGatewayKey(value);
-    else if (provider === 'anthropic') setAnthropicKey(value);
-    else if (provider === 'openrouter') setOpenrouterKey(value);
-    else if (provider === 'deepseek') setDeepseekKey(value);
-    else if (provider === 'moonshot') setMoonshotKey(value);
-    else setMinimaxKey(value);
-  };
-  const [storedModel, setStoredModel] = useLocalStorage(LS_MODEL, DEFAULT_MODEL);
-  const model = (MODEL_ALLOWLIST as readonly string[]).includes(storedModel) ? storedModel : DEFAULT_MODEL;
+  // BYOK is Claude-only now, so a single key slot — kept at the historical
+  // `paces.apiKey` localStorage key so existing users' keys survive.
+  const [claudeKey, setClaudeKey] = useLocalStorage(LS_API_KEY, '');
+  // storedModel starts EMPTY = "not explicitly chosen": a fresh signed-in user
+  // then defaults to their free tier model, a fresh BYOK user to Claude Sonnet.
+  const [storedModel, setStoredModel] = useLocalStorage(LS_MODEL, '');
 
   // Case list + selection.
   const [manifest, setManifest] = useState<PublicManifest | null>(null);
@@ -182,29 +163,27 @@ export default function Home() {
   const [cliBridge, setCliBridge] = useState(false);
 
   const managedActive = managedStatus?.active === true;
-  // The selected model picks the provider, which picks the BYOK key slot the
-  // examiner calls send. `apiKey` everywhere below = the ACTIVE provider's key.
-  // (Explicit ternary, not providerKeys[activeProvider]: computed member
-  // access on the fresh record makes React Compiler bail on the whole
-  // component — 16 preserve-manual-memoization errors.)
-  const activeProvider: ProviderId = modelProvider(model) ?? 'gateway';
-  const apiKey =
-    activeProvider === 'gateway'
-      ? gatewayKey
-      : activeProvider === 'anthropic'
-        ? anthropicKey
-        : activeProvider === 'openrouter'
-          ? openrouterKey
-          : activeProvider === 'deepseek'
-            ? deepseekKey
-            : activeProvider === 'moonshot'
-              ? moonshotKey
-              : minimaxKey;
-  // With a managed session active, the chat works without a BYOK key — but
-  // only for the MODELS the session's tier covers (status.models mirrors the
-  // server's own tier gate; the server re-checks on every call regardless).
-  // The dev CLI bridge serves keyless requests (dev-only), Claude only.
-  const managedCovers = managedActive && (managedStatus?.models ?? []).includes(model);
+  // The tier's free (gateway) models are selectable only while signed in; the
+  // BYOK Claude lineup is always selectable. If the stored choice isn't
+  // available (empty/unchosen, or a free model kept from a prior session now
+  // signed out), fall back to the tier's first free model when signed in
+  // (MOHH → Sonnet, consumer → DeepSeek) else Claude Sonnet.
+  const freeModels = managedActive ? (managedStatus?.models ?? []) : [];
+  const explicitModel = (MODEL_ALLOWLIST as readonly string[]).includes(storedModel) ? storedModel : '';
+  const model =
+    explicitModel && [...freeModels, ...BYOK_MODELS.map((m) => m.id)].includes(explicitModel)
+      ? explicitModel
+      : freeModels.length > 0
+        ? freeModels[0]
+        : DEFAULT_MODEL;
+  // A Claude model runs on the user's own key; a free/gateway model runs on the
+  // managed session (no client key). BYOK is Claude-only now.
+  const activeProvider: ProviderId = modelProvider(model) ?? 'anthropic';
+  const apiKey = activeProvider === 'anthropic' ? claudeKey : '';
+  // With a managed session active, the chat works without a BYOK key — but only
+  // for the tier's free models (status.models mirrors the server's own tier
+  // gate; the server re-checks every call). Dev CLI bridge: keyless, Claude only.
+  const managedCovers = managedActive && freeModels.includes(model);
   const cliBridgeCovers = cliBridge && activeProvider === 'anthropic';
   const hasKey = apiKey.trim().length > 0 || managedCovers || cliBridgeCovers;
   // Precomputed at render scope: helper calls with component-scope args inside
@@ -629,24 +608,25 @@ export default function Home() {
         }`}
       >
         <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h1 className="text-base font-semibold tracking-tight">PACES Practice</h1>
+          <h1 className="text-base font-semibold tracking-tight">PACES Buddy</h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             {managedActive
-              ? 'AI examiner · managed access'
+              ? 'AI examiner · signed in'
               : cliBridgeCovers && !apiKey.trim()
                 ? 'AI examiner · dev bridge (subscription quota)'
                 : 'AI examiner for MRCP PACES'}
           </p>
         </div>
-        {/* The Account panel sits above Settings: a managed user's first task
+        {/* The Account panel sits above Settings: a signed-in user's first task
             is signing in, not pasting an API key. */}
         <AccountPanel status={managedStatus} onRefresh={refreshManagedStatus} />
         <Settings
-          providerKeys={providerKeys}
+          claudeKey={claudeKey}
           model={model}
-          activeProvider={activeProvider}
+          signedIn={managedActive}
+          freeModels={freeModels}
           managedCovers={managedCovers}
-          onProviderKeyChange={setProviderKey}
+          onClaudeKeyChange={setClaudeKey}
           onModelChange={updateModel}
         />
         <HistoryList

@@ -300,10 +300,10 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
       socketTimeout: 8_000,
     });
     await transporter.sendMail({
-      from: `"PACES Practice" <${user}>`,
+      from: `"PACES Buddy" <${user}>`,
       to: email,
-      subject: `${code} is your PACES Practice sign-in code`,
-      text: `Hello,\n\nYour PACES Practice sign-in code is:\n\n    ${code}\n\nType it into the app within 10 minutes. If you did not request this email, just ignore it — nobody can sign in without the code.\n`,
+      subject: `${code} is your PACES Buddy sign-in code`,
+      text: `Hello,\n\nYour PACES Buddy sign-in code is:\n\n    ${code}\n\nType it into the app within 10 minutes. If you did not request this email, just ignore it — nobody can sign in without the code.\n`,
     });
   } catch (err) {
     console.error(

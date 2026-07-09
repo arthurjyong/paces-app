@@ -1,8 +1,8 @@
-# PACES Practice — AI examiner
+# PACES Buddy — AI examiner
 
 A shareable, BYOK (bring-your-own-key) web app for practising MRCP PACES with an AI examiner. Pick one of 503 practice encounters (past-year carousel recalls plus standalone case banks); the AI plays examiner (and simulated patient/relative for communication and consultation stations), reveals findings only as you examine, runs the viva, then marks you against the official PACES rubric with a structured per-skill marksheet.
 
-Built on Next.js (App Router) + the Anthropic Messages API. Models are served through one multi-provider adapter: the managed door routes through **Vercel AI Gateway** (one operator top-up, zero markup), while BYOK users bring a Vercel AI Gateway, Anthropic, or OpenRouter key (the same adapter can also speak directly to DeepSeek / Moonshot / MiniMax endpoints for off-Vercel use). The candidate's browser only ever sees the case stem and the examiner's replies — expected findings, model answers, and the answer key stay server-side.
+Built on Next.js (App Router) + the Anthropic Messages API. Models are served through one multi-provider adapter: the managed door routes server-side through **Vercel AI Gateway** (one operator top-up, zero markup), while BYOK users bring their own **Anthropic (Claude)** key (the same adapter can also speak directly to DeepSeek / Moonshot / MiniMax endpoints for off-Vercel use, though those aren't surfaced in the UI). The candidate's browser only ever sees the case stem and the examiner's replies — expected findings, model answers, and the answer key stay server-side.
 
 ## Features
 
@@ -11,7 +11,7 @@ Built on Next.js (App Router) + the Anthropic Messages API. Models are served th
 - **Clinical-image reveal** — for cases where a sign is something you *see*, the examiner surfaces a real photo in-chat once you examine that region (same discipline as text findings; never on the stem).
 - **Crash-safe transcripts** — the live encounter (case, transcript, revealed photos, marksheet) autosaves to the browser and restores on reload, so an accidental refresh never wipes your work. Fully client-side; the backend stores no transcripts.
 - **History** — finished or parked encounters are archived in the browser (IndexedDB); reopen one read-only or continue an unmarked case where you left off.
-- **Eight models, three key types** — the managed door offers Claude Sonnet 4.6 (premium, ~$0.30/case) and DeepSeek V4 Pro (budget, ~$0.02–0.05/case — thinking is always-on on the gateway, billed as output), both via **Vercel AI Gateway** (one key, one top-up, zero markup). BYOK adds the direct Claude lineup (Sonnet 4.6 / Opus 4.8 / Haiku 4.5 on an Anthropic key) and a curated OpenRouter shortlist (Claude Sonnet 4.6 / GPT-5.5 / DeepSeek V4 Pro — one OpenRouter key reaches all three).
+- **Five models, two doors** — the managed door offers Claude Sonnet 4.6 (premium, ~$0.30/case) and DeepSeek V4 Pro (budget, ~$0.02–0.05/case — thinking is always-on on the gateway, billed as output), both via **Vercel AI Gateway** (one operator key, one top-up, zero markup, server-side only). BYOK adds the direct Claude lineup (Sonnet 4.6 / Opus 4.8 / Haiku 4.5 on your own Anthropic key) — BYOK is Claude-only.
 - **Two access doors** — bring your own API key (kept only in your browser, one saved slot per provider, no account needed), or sign in with your email + a 6-digit code and practise on the app's own metered allowance (see *Managed access* below).
 
 All study state — transcripts, history, keys — lives in the candidate's own browser; the server never stores a transcript. A managed sign-in adds only a minimal server-side account: email, tier, and a monthly usage meter.
@@ -24,7 +24,7 @@ node scripts/build-content.mjs   # builds content/ from the PACES corpus (parent
 npm run dev                      # http://localhost:3000
 ```
 
-Then open the app and either sign in for managed access (once you've configured it — see below), or pick a model in **Settings** and paste the matching BYOK key: a **Vercel AI Gateway** key (one balance covering both gateway models), an **Anthropic** key (the direct Claude lineup), or an **OpenRouter** key (one key → Claude / GPT / DeepSeek). BYOK keys are stored only in your browser, sent per-request, never saved server-side. Then pick a case and begin.
+Then open the app and either sign in for managed access (once you've configured it — see below), or pick a Claude model in **Settings** and paste your own **Anthropic (Claude)** key (Sonnet 4.6 / Opus 4.8 / Haiku 4.5 all ride the one key). BYOK is Claude-only; the key is stored only in your browser, sent per-request, never saved server-side. Then pick a case and begin.
 
 `content/` is generated and gitignored — it contains the full hidden corpus (answer keys included), so it must never be committed. Regenerate it any time with the build script; the source corpus lives in the parent PACES directory (`5_Carousels_PACES23/`, `_index/`).
 
@@ -67,7 +67,7 @@ ON CONFLICT (email) DO UPDATE SET tier = EXCLUDED.tier, monthly_allowance_usd = 
 3. Set the remaining env vars: `AUTH_SECRET` (`openssl rand -hex 32`), `DEMO_GATEWAY_API_KEY` (the Vercel AI Gateway key the tier spends — top up its balance manually and leave auto-top-up off, so the balance is a hard ceiling), `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS` (sends the codes; in local dev leave them unset and the code prints to the server console), and optionally `MANAGED_DAILY_CAP_USD` (global backstop across all managed users per Singapore day; default 5).
 4. Curate the domain lists to taste with the SQL above.
 
-Using Gmail for SMTP: Gmail blocks plain passwords, so create an **app password** — Google Account → Security → turn on 2-Step Verification → then visit <https://myaccount.google.com/apppasswords>, create one named e.g. "PACES Practice", and use the 16-character code as `SMTP_PASS` with `SMTP_USER=your@gmail.com`, `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`.
+Using Gmail for SMTP: Gmail blocks plain passwords, so create an **app password** — Google Account → Security → turn on 2-Step Verification → then visit <https://myaccount.google.com/apppasswords>, create one named e.g. "PACES Buddy", and use the 16-character code as `SMTP_PASS` with `SMTP_USER=your@gmail.com`, `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`.
 
 ## How it works
 

@@ -3,10 +3,11 @@
 // Multi-provider: every allowlisted model maps to a provider whose endpoint
 // speaks the Anthropic Messages API, so ONE @anthropic-ai/sdk code path serves
 // them all — the server switches only baseURL (fixed map in lib/providers.ts,
-// never client-supplied) and API key per provider. The upstream call sends the
-// model's WIRE id (modelWireId — OpenRouter registry ids are prefixed
-// 'openrouter/…' to stay unique across providers); the REGISTRY id drives
-// everything else server-side: allowlist, provider selection, tier gate, pricing.
+// never client-supplied) and API key per provider. The model id is both the
+// registry id and the upstream wire id (gateway slugs like
+// 'anthropic/claude-sonnet-4.6' and Anthropic slugs like 'claude-sonnet-4-6'
+// don't collide), and it drives everything: allowlist, provider selection,
+// tier gate, pricing.
 //
 // Security invariants enforced here:
 // - The user's API key (API_KEY_HEADER) goes straight into the Anthropic SDK
@@ -46,7 +47,6 @@ import {
   DEFAULT_MODEL,
   MODELS,
   modelProvider,
-  modelWireId,
   providerInfo,
   type ApiError,
   type CaseImage,
@@ -478,12 +478,6 @@ export async function POST(request: Request) {
     }
     const providerCfg = PROVIDER_CONFIG[provider];
     const providerLabel = providerInfo(provider).label;
-    // Registry id vs wire id: `model` (the registry id) stays authoritative
-    // for everything server-side — allowlist, tier gate, pricing, the settle
-    // ledger, error paths — while EVERY upstream messages.create sends the
-    // wire id (OpenRouter registry ids are prefixed 'openrouter/…' to stay
-    // unique in the registry; gateway/Anthropic ids pass through unchanged).
-    const wireModel = modelWireId(model);
 
     // Photos available for this case (server-side map, keyed by caseCode). Only
     // sign-level captions + urls ever reach the client, and only via a reveal.
@@ -699,7 +693,7 @@ export async function POST(request: Request) {
       // internal result): the internal lastResponseId must not leak, and the
       // wire shapes ExaminerChatResponse / ExaminerMarkResponse are unchanged.
       if (action === 'chat') {
-        const result = await runChat(client, wireModel, system, rawMessages, caseImages, callOpts);
+        const result = await runChat(client, model, system, rawMessages, caseImages, callOpts);
         if ('error' in result) return jsonError(result.error, result.status);
         await settleSuccess(result.usage, result.lastResponseId);
         const payload: ExaminerChatResponse = {
@@ -710,7 +704,7 @@ export async function POST(request: Request) {
         };
         return NextResponse.json(payload);
       }
-      const result = await runMark(client, wireModel, system, rawMessages, meta, callOpts);
+      const result = await runMark(client, model, system, rawMessages, meta, callOpts);
       if ('error' in result) return jsonError(result.error, result.status);
       await settleSuccess(result.usage, result.lastResponseId);
       const payload: ExaminerMarkResponse = { marksheet: result.marksheet, usage: result.usage };

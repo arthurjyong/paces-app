@@ -138,8 +138,8 @@ export default function AccountPanel({ status, onRefresh }: AccountPanelProps) {
     allowance > 0 ? Math.min((spent + reserved) / allowance, 1) : spent + reserved > 0 ? 1 : 0;
   const tierLine =
     status?.tier === 'institutional'
-      ? 'Institutional tier — Claude Sonnet + DeepSeek'
-      : 'Public tier — DeepSeek';
+      ? 'Free: Claude Sonnet 4.6 + DeepSeek V4 Pro'
+      : 'Free: DeepSeek V4 Pro';
 
   return (
     <section className="border-b border-zinc-200 dark:border-zinc-800">
@@ -205,9 +205,9 @@ export default function AccountPanel({ status, onRefresh }: AccountPanelProps) {
               }}
             >
               <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                Sign in with your email for managed access — free practice on the app&apos;s shared
-                key, no API key needed. Consumer emails get DeepSeek; SG-healthcare institutional
-                emails get Claude + DeepSeek.
+                Sign in with your email for free practice with DeepSeek V4 Pro. An MOHH or hospital
+                email also gets free practice with Claude Sonnet 4.6. Using your own Claude API key
+                is always free.
               </p>
               <input
                 type="email"

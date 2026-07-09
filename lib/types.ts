@@ -158,15 +158,15 @@ export type KbLookup = Record<string, string[]>;
  * serves all of them — the server only switches baseURL + API key by the
  * selected model (the client never controls a URL; see SPEC.md).
  *
- * `gateway` = Vercel AI Gateway: ONE key + ONE top-up that fans out (at zero
- * markup) to Claude + DeepSeek models. It is the managed door's only provider
- * (Phase 0, 2026-07-09; metered per-user in Phase 1). `openrouter` (Phase 1)
- * is the promoted BYOK aggregator — one user key reaches Claude + GPT +
- * DeepSeek via OpenRouter's Anthropic-Messages endpoint. The remaining direct
- * providers (deepseek/moonshot/minimax) stay wired server-side for BYOK-direct
- * + as the off-Vercel escape hatch, but are not offered in MODELS.
+ * `gateway` = Vercel AI Gateway: the MANAGED door's server-side provider —
+ * ONE operator key that fans out (zero markup) to the tier's free models
+ * (Phase 0; metered per-user in Phase 1). It is NEVER a BYOK option — a user
+ * reaches it by signing in, not by pasting a key. `anthropic` = the BYOK door:
+ * the user's own Claude key (Sonnet / Opus / Haiku). The other direct providers
+ * (deepseek/moonshot/minimax) stay wired server-side as an off-Vercel escape
+ * hatch but are not offered in MODELS or surfaced in the UI.
  */
-export type ProviderId = 'gateway' | 'anthropic' | 'openrouter' | 'deepseek' | 'moonshot' | 'minimax';
+export type ProviderId = 'gateway' | 'anthropic' | 'deepseek' | 'moonshot' | 'minimax';
 
 export interface ProviderInfo {
   id: ProviderId;
@@ -178,8 +178,8 @@ export interface ProviderInfo {
 
 export const PROVIDERS: readonly ProviderInfo[] = [
   { id: 'gateway', label: 'Vercel AI Gateway', keyConsoleUrl: 'https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai-gateway%2Fapi-keys', keyPlaceholder: 'vck_…' },
-  { id: 'anthropic', label: 'Anthropic', keyConsoleUrl: 'https://console.anthropic.com/', keyPlaceholder: 'sk-ant-…' },
-  { id: 'openrouter', label: 'OpenRouter', keyConsoleUrl: 'https://openrouter.ai/settings/keys', keyPlaceholder: 'sk-or-…' },
+  // BYOK is Claude only: the "Get a key" link and placeholder speak Claude.
+  { id: 'anthropic', label: 'Claude', keyConsoleUrl: 'https://console.anthropic.com/settings/keys', keyPlaceholder: 'sk-ant-…' },
   { id: 'deepseek', label: 'DeepSeek', keyConsoleUrl: 'https://platform.deepseek.com/', keyPlaceholder: 'sk-…' },
   { id: 'moonshot', label: 'Moonshot (Kimi)', keyConsoleUrl: 'https://platform.moonshot.ai/', keyPlaceholder: 'sk-…' },
   { id: 'minimax', label: 'MiniMax', keyConsoleUrl: 'https://platform.minimax.io/', keyPlaceholder: '…' },
@@ -191,58 +191,44 @@ export function providerInfo(id: ProviderId): ProviderInfo {
 }
 
 export interface ModelInfo {
-  /**
-   * Registry id — what the client selects, stores, and sends; unique across
-   * ALL providers. Usually also the upstream wire id; where the same upstream
-   * slug exists under two providers (gateway vs OpenRouter both use
-   * "anthropic/claude-sonnet-4.6"), the registry id is prefixed and `wireId`
-   * carries the real slug.
-   */
+  /** registry id — what the client selects, stores, and sends; also the upstream wire id */
   id: string;
   provider: ProviderId;
-  /** picker label; includes a rough per-case cost hint (the user's cost dial) */
+  /** plain model name for the picker (no jargon — the audience is clinicians) */
   label: string;
-  /** upstream model id, when it differs from the registry id */
-  wireId?: string;
 }
 
 /**
- * The offered models (Phase 1, 2026-07-09).
- * - gateway — the MANAGED door (server key, login-gated, per-user metered;
- *   which of the two a signed-in user may run is tier-gated server-side) AND
- *   available to a BYOK gateway key. Slugs + list prices verified live on the
- *   gateway models API 2026-07-09 (zero markup: Sonnet 4.6 $3/$15 per M,
- *   DeepSeek V4 Pro $0.435/$0.87 per M; both 1M context).
- * - anthropic — BYOK-direct Claude lineup (the user's own Anthropic key).
- * - openrouter — BYOK curated shortlist (one OpenRouter key reaches Claude +
- *   GPT + DeepSeek; deliberately NOT the full 300-model catalog). Slugs
- *   verified on the OpenRouter models API 2026-07-09.
+ * The offered models (Phase 1, picker simplified 2026-07-09 per Arthur).
+ * - gateway — the MANAGED door's free models (server key, login-gated,
+ *   per-user metered; which a signed-in user may run is tier-gated
+ *   server-side). Slugs + list prices verified live on the gateway models API
+ *   2026-07-09 (Sonnet 4.6 $3/$15 per M, DeepSeek V4 Pro $0.435/$0.87 per M).
+ *   These are NOT selectable BYOK options — reached only by signing in.
+ * - anthropic — the BYOK door: the user's own Claude key. Sonnet 4.6 is the
+ *   default; Opus 4.8 and Haiku 4.5 are the options. (OpenRouter and a
+ *   BYOK gateway key were dropped 2026-07-09 — BYOK users bring Claude.)
  */
 export const MODELS: readonly ModelInfo[] = [
-  { id: 'anthropic/claude-sonnet-4.6', provider: 'gateway', label: 'Claude Sonnet 4.6 (premium · ~$0.30/case)' },
-  { id: 'deepseek/deepseek-v4-pro', provider: 'gateway', label: 'DeepSeek V4 Pro (budget · ~$0.02/case)' },
-  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6 (premium · ~$0.30/case)' },
-  { id: 'claude-opus-4-8', provider: 'anthropic', label: 'Claude Opus 4.8 (top marking · ~$1.50/case)' },
-  { id: 'claude-haiku-4-5', provider: 'anthropic', label: 'Claude Haiku 4.5 (fast · ~$0.10/case)' },
-  { id: 'openrouter/anthropic/claude-sonnet-4.6', provider: 'openrouter', wireId: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6 (premium · ~$0.30/case)' },
-  { id: 'openrouter/openai/gpt-5.5', provider: 'openrouter', wireId: 'openai/gpt-5.5', label: 'GPT-5.5 (premium)' },
-  { id: 'openrouter/deepseek/deepseek-v4-pro', provider: 'openrouter', wireId: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro (budget · ~$0.02/case)' },
+  { id: 'anthropic/claude-sonnet-4.6', provider: 'gateway', label: 'Claude Sonnet 4.6' },
+  { id: 'deepseek/deepseek-v4-pro', provider: 'gateway', label: 'DeepSeek V4 Pro' },
+  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6' },
+  { id: 'claude-opus-4-8', provider: 'anthropic', label: 'Claude Opus 4.8' },
+  { id: 'claude-haiku-4-5', provider: 'anthropic', label: 'Claude Haiku 4.5' },
 ];
 
 export const MODEL_ALLOWLIST: readonly string[] = MODELS.map((m) => m.id);
 
-export const DEFAULT_MODEL = 'anthropic/claude-sonnet-4.6';
+/** The BYOK default (Claude Sonnet 4.6 on the user's own key); signed-in users are switched to their free tier model client-side. */
+export const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 /** Provider of an allowlisted model id; undefined for anything else. */
 export function modelProvider(model: string): ProviderId | undefined {
   return MODELS.find((m) => m.id === model)?.provider;
 }
 
-/** Upstream wire id for an allowlisted registry id (falls back to the id itself). */
-export function modelWireId(model: string): string {
-  const entry = MODELS.find((m) => m.id === model);
-  return entry?.wireId ?? model;
-}
+/** BYOK Claude models (the anthropic-direct lineup), in picker order. */
+export const BYOK_MODELS: readonly ModelInfo[] = MODELS.filter((m) => m.provider === 'anthropic');
 
 /** Client sends the SELECTED MODEL'S PROVIDER API key in this header on every /api/examiner call. */
 export const API_KEY_HEADER = 'x-user-api-key';
