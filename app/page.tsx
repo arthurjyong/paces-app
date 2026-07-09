@@ -93,18 +93,21 @@ function retryNotice(entries: TranscriptEntry[], marksheet: MarkSheet | null): s
 export default function Home() {
   // Settings (persisted to localStorage). One BYOK key slot per provider —
   // fixed hooks (never map over PROVIDERS here: hook order must be static).
+  const [gatewayKey, setGatewayKey] = useLocalStorage('paces.apiKey.gateway', '');
   const [anthropicKey, setAnthropicKey] = useLocalStorage(LS_API_KEY, '');
   const [deepseekKey, setDeepseekKey] = useLocalStorage('paces.apiKey.deepseek', '');
   const [moonshotKey, setMoonshotKey] = useLocalStorage('paces.apiKey.moonshot', '');
   const [minimaxKey, setMinimaxKey] = useLocalStorage('paces.apiKey.minimax', '');
   const providerKeys: Record<ProviderId, string> = {
+    gateway: gatewayKey,
     anthropic: anthropicKey,
     deepseek: deepseekKey,
     moonshot: moonshotKey,
     minimax: minimaxKey,
   };
   const setProviderKey = (provider: ProviderId, value: string) => {
-    if (provider === 'anthropic') setAnthropicKey(value);
+    if (provider === 'gateway') setGatewayKey(value);
+    else if (provider === 'anthropic') setAnthropicKey(value);
     else if (provider === 'deepseek') setDeepseekKey(value);
     else if (provider === 'moonshot') setMoonshotKey(value);
     else setMinimaxKey(value);
@@ -182,15 +185,17 @@ export default function Home() {
   // (Explicit ternary, not providerKeys[activeProvider]: computed member
   // access on the fresh record makes React Compiler bail on the whole
   // component — 16 preserve-manual-memoization errors.)
-  const activeProvider: ProviderId = modelProvider(model) ?? 'anthropic';
+  const activeProvider: ProviderId = modelProvider(model) ?? 'gateway';
   const apiKey =
-    activeProvider === 'anthropic'
-      ? anthropicKey
-      : activeProvider === 'deepseek'
-        ? deepseekKey
-        : activeProvider === 'moonshot'
-          ? moonshotKey
-          : minimaxKey;
+    activeProvider === 'gateway'
+      ? gatewayKey
+      : activeProvider === 'anthropic'
+        ? anthropicKey
+        : activeProvider === 'deepseek'
+          ? deepseekKey
+          : activeProvider === 'moonshot'
+            ? moonshotKey
+            : minimaxKey;
   // With demo access active, the chat works without a BYOK key — but only for
   // models whose provider the server-held keys cover. A missing or empty
   // providers list means an older server: assume the historical Anthropic-only
