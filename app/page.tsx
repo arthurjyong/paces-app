@@ -1,9 +1,10 @@
 'use client';
 
 // PACES Practice — single-page client app.
-// Holds all state (settings, manifest, selected case, transcript, marksheet)
-// and talks to the backend exclusively via GET /api/manifest, GET /api/case/[id],
-// and POST /api/examiner, per lib/types.ts.
+// Holds all state (settings, manifest, selected case, transcript, marksheet,
+// managed-session status) and talks to the backend exclusively via
+// GET /api/manifest, GET /api/case/[id], POST /api/examiner, and the
+// /api/auth/* managed-door endpoints, per lib/types.ts + lib/tiers.ts.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -23,7 +24,6 @@ import {
   type ProviderId,
   type ApiError,
   type ChatMessage,
-  type DemoStatus,
   type ExaminerChatResponse,
   type ExaminerMarkResponse,
   type ExaminerRequest,
@@ -32,8 +32,9 @@ import {
   type PublicManifest,
   type TokenUsage,
 } from '@/lib/types';
+import type { ManagedStatus } from '@/lib/tiers';
 import Settings from '@/components/Settings';
-import DemoAccess from '@/components/DemoAccess';
+import AccountPanel from '@/components/AccountPanel';
 import CasePicker from '@/components/CasePicker';
 import ChatPane from '@/components/ChatPane';
 import HistoryList from '@/components/HistoryList';
@@ -50,17 +51,17 @@ const LS_API_KEY = 'paces.apiKey';
 const LS_MODEL = 'paces.model';
 
 function noKeyError(provider: ProviderId): string {
-  return `Invited by the app owner? Sign in under "Invited access" in the sidebar — no API key needed. Otherwise add your ${providerInfo(provider).label} API key in Settings.`;
+  return `Sign in under "Account" in the sidebar to practise on the app's managed access — or add your ${providerInfo(provider).label} API key in Settings.`;
 }
 
-/** A signed-in invited user whose session doesn't cover this model's provider needs "switch model" guidance, not a sign-in prompt (mirrors the server's 403). */
-function demoUncoveredError(provider: ProviderId): string {
+/** A signed-in managed user whose tier doesn't cover this model needs "switch model" guidance, not a sign-in prompt (mirrors the server's 403). */
+function managedUncoveredError(provider: ProviderId): string {
   const label = providerInfo(provider).label;
-  return `Invited access doesn't cover ${label} models — pick a different model in Settings, or add your own ${label} API key.`;
+  return `Managed access on your tier doesn't cover this model — pick a covered model in Settings, or add your own ${label} API key.`;
 }
 
 const SESSION_EXPIRED_ERROR =
-  'Your sign-in has expired or been revoked — request a new sign-in link under "Invited access" in the sidebar.';
+  'Your sign-in has expired or been revoked — sign in again under "Account" in the sidebar.';
 
 async function readJson(res: Response): Promise<unknown> {
   try {
@@ -95,12 +96,14 @@ export default function Home() {
   // fixed hooks (never map over PROVIDERS here: hook order must be static).
   const [gatewayKey, setGatewayKey] = useLocalStorage('paces.apiKey.gateway', '');
   const [anthropicKey, setAnthropicKey] = useLocalStorage(LS_API_KEY, '');
+  const [openrouterKey, setOpenrouterKey] = useLocalStorage('paces.apiKey.openrouter', '');
   const [deepseekKey, setDeepseekKey] = useLocalStorage('paces.apiKey.deepseek', '');
   const [moonshotKey, setMoonshotKey] = useLocalStorage('paces.apiKey.moonshot', '');
   const [minimaxKey, setMinimaxKey] = useLocalStorage('paces.apiKey.minimax', '');
   const providerKeys: Record<ProviderId, string> = {
     gateway: gatewayKey,
     anthropic: anthropicKey,
+    openrouter: openrouterKey,
     deepseek: deepseekKey,
     moonshot: moonshotKey,
     minimax: minimaxKey,
@@ -108,6 +111,7 @@ export default function Home() {
   const setProviderKey = (provider: ProviderId, value: string) => {
     if (provider === 'gateway') setGatewayKey(value);
     else if (provider === 'anthropic') setAnthropicKey(value);
+    else if (provider === 'openrouter') setOpenrouterKey(value);
     else if (provider === 'deepseek') setDeepseekKey(value);
     else if (provider === 'moonshot') setMoonshotKey(value);
     else setMinimaxKey(value);
@@ -129,12 +133,10 @@ export default function Home() {
   const [marksheet, setMarksheet] = useState<MarkSheet | null>(null);
   const [markUsage, setMarkUsage] = useState<TokenUsage | null>(null);
 
-  // Demo access (httpOnly cookie session — the client only sees this status).
-  const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null);
-  // One-shot ?demo=active|invalid flag from /api/demo/verify's redirect,
-  // surfaced as a MAIN-PANE banner (the sidebar is off-canvas on mobile, where
-  // the emailed link is most likely opened).
-  const [demoNotice, setDemoNotice] = useState<'active' | 'invalid' | null>(null);
+  // Managed access (httpOnly cookie session — the client only ever sees the
+  // ManagedStatus projection: masked email, tier, covered models, this
+  // month's meter).
+  const [managedStatus, setManagedStatus] = useState<ManagedStatus | null>(null);
 
   // Mobile sidebar drawer.
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -179,7 +181,7 @@ export default function Home() {
   // key). /api/dev-status 404s in production, so this stays false there.
   const [cliBridge, setCliBridge] = useState(false);
 
-  const demoActive = demoStatus?.active === true;
+  const managedActive = managedStatus?.active === true;
   // The selected model picks the provider, which picks the BYOK key slot the
   // examiner calls send. `apiKey` everywhere below = the ACTIVE provider's key.
   // (Explicit ternary, not providerKeys[activeProvider]: computed member
@@ -191,25 +193,24 @@ export default function Home() {
       ? gatewayKey
       : activeProvider === 'anthropic'
         ? anthropicKey
-        : activeProvider === 'deepseek'
-          ? deepseekKey
-          : activeProvider === 'moonshot'
-            ? moonshotKey
-            : minimaxKey;
-  // With demo access active, the chat works without a BYOK key — but only for
-  // models whose provider the server-held keys cover. A missing or empty
-  // providers list means an older server: assume the historical Anthropic-only
-  // setup. The dev CLI bridge serves keyless requests (dev-only), Claude only.
-  const demoProviderList = demoStatus?.providers;
-  const demoCovers =
-    demoActive &&
-    (demoProviderList?.length ? demoProviderList : ['anthropic']).includes(activeProvider);
+        : activeProvider === 'openrouter'
+          ? openrouterKey
+          : activeProvider === 'deepseek'
+            ? deepseekKey
+            : activeProvider === 'moonshot'
+              ? moonshotKey
+              : minimaxKey;
+  // With a managed session active, the chat works without a BYOK key — but
+  // only for the MODELS the session's tier covers (status.models mirrors the
+  // server's own tier gate; the server re-checks on every call regardless).
+  // The dev CLI bridge serves keyless requests (dev-only), Claude only.
+  const managedCovers = managedActive && (managedStatus?.models ?? []).includes(model);
   const cliBridgeCovers = cliBridge && activeProvider === 'anthropic';
-  const hasKey = apiKey.trim().length > 0 || demoCovers || cliBridgeCovers;
+  const hasKey = apiKey.trim().length > 0 || managedCovers || cliBridgeCovers;
   // Precomputed at render scope: helper calls with component-scope args inside
   // the callbacks defeat React Compiler memoization preservation.
   const keyMissingError =
-    demoActive && !demoCovers ? demoUncoveredError(activeProvider) : noKeyError(activeProvider);
+    managedActive && !managedCovers ? managedUncoveredError(activeProvider) : noKeyError(activeProvider);
 
   const updateModel = useCallback(
     (value: string) => {
@@ -219,24 +220,26 @@ export default function Home() {
     [setStoredModel],
   );
 
-  // Fetch demo-access status (best-effort: failures just mean the BYOK-only
-  // experience). Also re-invoked when an examiner call 401s without a BYOK key,
-  // so the sidebar can't keep claiming "access active" after expiry/revocation.
-  const refreshDemoStatus = useCallback(async () => {
+  // Fetch managed-access status (best-effort: failures just mean the
+  // BYOK-only experience). Also re-invoked when an examiner call 401s without
+  // a BYOK key (so the sidebar can't keep claiming "signed in" after
+  // expiry/revocation) and after every successful keyless-managed call (so
+  // the sidebar's usage meter tracks spend live).
+  const refreshManagedStatus = useCallback(async () => {
     try {
-      const res = await fetch('/api/demo/status');
+      const res = await fetch('/api/auth/status');
       const data = await readJson(res);
-      if (res.ok && data && typeof (data as DemoStatus).active === 'boolean') {
-        setDemoStatus(data as DemoStatus);
+      if (res.ok && data && typeof (data as ManagedStatus).active === 'boolean') {
+        setManagedStatus(data as ManagedStatus);
       }
     } catch {
-      // ignore — demo access simply stays inactive
+      // ignore — managed access simply stays inactive
     }
   }, []);
 
   useEffect(() => {
-    void refreshDemoStatus();
-  }, [refreshDemoStatus]);
+    void refreshManagedStatus();
+  }, [refreshManagedStatus]);
 
   // Probe the dev-only CLI bridge once on load (best-effort; 404 in prod).
   useEffect(() => {
@@ -256,22 +259,6 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  // One-shot read of the ?demo= flag appended by /api/demo/verify's redirect,
-  // then strip it from the URL so a reload doesn't re-show the notice.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const flag = params.get('demo');
-    if (flag === null) return;
-    if (flag === 'active' || flag === 'invalid') setDemoNotice(flag);
-    params.delete('demo');
-    const qs = params.toString();
-    window.history.replaceState(
-      null,
-      '',
-      window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
-    );
   }, []);
 
   // Fetch the manifest on load.
@@ -470,11 +457,11 @@ export default function Home() {
   const runChat = useCallback(
     async (transcript: TranscriptEntry[]) => {
       if (!publicCase) return;
-      // BYOK key takes precedence; with none, a demo session covering this
-      // model's provider (or the dev-only CLI bridge, Anthropic models only)
-      // lets the server handle the call without a client key.
+      // BYOK key takes precedence; with none, a managed session covering this
+      // model (or the dev-only CLI bridge, Anthropic models only) lets the
+      // server handle the call without a client key.
       const key = apiKey.trim();
-      if (!key && !demoCovers && !cliBridgeCovers) {
+      if (!key && !managedCovers && !cliBridgeCovers) {
         setError(keyMissingError);
         return;
       }
@@ -495,13 +482,17 @@ export default function Home() {
         });
         const data = await readJson(res);
         if (res.status === 401 && !key && !cliBridgeCovers) {
-          // Keyless request means we relied on the demo session, so a 401 is
-          // expiry/revocation — the server's "Missing API key" would send a
-          // keyless invited user hunting for a key. Re-sync the sidebar too.
-          void refreshDemoStatus();
+          // Keyless request means we relied on the managed session, so a 401
+          // is expiry/revocation — the server's "Missing API key" would send
+          // a keyless managed user hunting for a key. Re-sync the sidebar too.
+          void refreshManagedStatus();
           throw new Error(SESSION_EXPIRED_ERROR);
         }
         if (!res.ok) throw new Error(errorFrom(data, `Request failed (${res.status})`));
+        // A keyless-managed call just settled real spend against this month's
+        // allowance — re-sync the sidebar meter (best-effort; runs even if the
+        // reply is discarded below, because the money moved regardless).
+        if (!key && managedCovers) void refreshManagedStatus();
         // Discard replies that resolve after the user switched case — appending
         // them would put case A's examiner turn into case B's transcript.
         if (caseIdRef.current !== caseId) return;
@@ -526,7 +517,7 @@ export default function Home() {
         setPending(null);
       }
     },
-    [publicCase, apiKey, demoCovers, cliBridgeCovers, keyMissingError, model, refreshDemoStatus],
+    [publicCase, apiKey, managedCovers, cliBridgeCovers, keyMissingError, model, refreshManagedStatus],
   );
 
   const send = useCallback(
@@ -556,7 +547,7 @@ export default function Home() {
   const mark = useCallback(async () => {
     if (!publicCase || pending || caseLoading || transitionRef.current || entries.length === 0) return;
     const key = apiKey.trim();
-    if (!key && !demoCovers && !cliBridgeCovers) {
+    if (!key && !managedCovers && !cliBridgeCovers) {
       setError(keyMissingError);
       return;
     }
@@ -576,11 +567,13 @@ export default function Home() {
       });
       const data = await readJson(res);
       if (res.status === 401 && !key && !cliBridgeCovers) {
-        // See runChat: keyless 401 = demo session expired/revoked.
-        void refreshDemoStatus();
+        // See runChat: keyless 401 = managed session expired/revoked.
+        void refreshManagedStatus();
         throw new Error(SESSION_EXPIRED_ERROR);
       }
       if (!res.ok) throw new Error(errorFrom(data, `Request failed (${res.status})`));
+      // See runChat: keyless-managed spend settled — keep the meter live.
+      if (!key && managedCovers) void refreshManagedStatus();
       const marked = data as ExaminerMarkResponse;
       setMarksheet(marked.marksheet);
       setMarkUsage(marked.usage);
@@ -589,7 +582,7 @@ export default function Home() {
     } finally {
       setPending(null);
     }
-  }, [publicCase, pending, caseLoading, entries, apiKey, demoCovers, cliBridgeCovers, keyMissingError, model, refreshDemoStatus]);
+  }, [publicCase, pending, caseLoading, entries, apiKey, managedCovers, cliBridgeCovers, keyMissingError, model, refreshManagedStatus]);
 
   const newCase = useCallback(() => {
     if (pending || caseLoading || transitionRef.current) return;
@@ -618,29 +611,6 @@ export default function Home() {
 
   const canRetry = error !== null && entries.length > 0 && entries[entries.length - 1].role === 'user';
 
-  // Main-pane banner for the one-shot ?demo= verify-redirect flag. Lives here
-  // (not in the sidebar) because on mobile the sidebar is off-canvas and the
-  // emailed link is most likely tapped on a phone. For 'active', the wording
-  // tracks /api/demo/status so a dropped cookie (some in-app browsers) doesn't
-  // leave a success message lying about a session that never stuck.
-  let demoBanner: { warn: boolean; text: string } | null = null;
-  if (demoNotice === 'invalid') {
-    demoBanner = {
-      warn: true,
-      text: 'That sign-in link is invalid or has expired. Request a new one under "Invited access" in the sidebar.',
-    };
-  } else if (demoNotice === 'active') {
-    demoBanner =
-      demoStatus === null
-        ? { warn: false, text: 'Sign-in received — checking access…' }
-        : demoStatus.active
-          ? { warn: false, text: 'Sign-in successful — invited access is active on this device. No API key needed.' }
-          : {
-              warn: true,
-              text: 'The sign-in did not stick on this browser — cookies may be blocked, or the link opened inside another app. Try opening the link in Safari or Chrome, or request a new one under "Invited access" in the sidebar.',
-            };
-  }
-
   return (
     <div className="flex h-dvh overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {/* Mobile backdrop */}
@@ -661,21 +631,21 @@ export default function Home() {
         <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <h1 className="text-base font-semibold tracking-tight">PACES Practice</h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {demoActive
-              ? 'AI examiner · invited access active'
+            {managedActive
+              ? 'AI examiner · managed access'
               : cliBridgeCovers && !apiKey.trim()
                 ? 'AI examiner · dev bridge (subscription quota)'
                 : 'AI examiner for MRCP PACES'}
           </p>
         </div>
-        {/* Invited access sits above Settings: an invited consultant's first
-            task is signing in, not pasting an API key. */}
-        <DemoAccess status={demoStatus} />
+        {/* The Account panel sits above Settings: a managed user's first task
+            is signing in, not pasting an API key. */}
+        <AccountPanel status={managedStatus} onRefresh={refreshManagedStatus} />
         <Settings
           providerKeys={providerKeys}
           model={model}
           activeProvider={activeProvider}
-          demoCovers={demoCovers}
+          managedCovers={managedCovers}
           onProviderKeyChange={setProviderKey}
           onModelChange={updateModel}
         />
@@ -700,36 +670,6 @@ export default function Home() {
 
       {/* Main pane */}
       <main className="flex min-w-0 flex-1 flex-col">
-        {demoBanner && (
-          <div
-            className={`flex items-start justify-between gap-3 border-b px-4 py-2.5 text-sm ${
-              demoBanner.warn
-                ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
-                : 'border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200'
-            }`}
-          >
-            <span className="leading-6">{demoBanner.text}</span>
-            <div className="flex shrink-0 items-center gap-2">
-              {demoBanner.warn && (
-                <button
-                  type="button"
-                  onClick={() => setSidebarOpen(true)}
-                  className="rounded border border-current px-2 py-0.5 text-xs font-medium md:hidden"
-                >
-                  Open sidebar
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setDemoNotice(null)}
-                aria-label="Dismiss notice"
-                className="rounded px-1 text-base leading-none opacity-70 hover:opacity-100"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-        )}
         <ChatPane
           publicCase={publicCase}
           caseLoading={caseLoading}

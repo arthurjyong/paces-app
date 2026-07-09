@@ -159,12 +159,14 @@ export type KbLookup = Record<string, string[]>;
  * selected model (the client never controls a URL; see SPEC.md).
  *
  * `gateway` = Vercel AI Gateway: ONE key + ONE top-up that fans out (at zero
- * markup) to Claude + DeepSeek models. It is the managed "one place I top up"
- * path (Phase 0, 2026-07-09). The direct providers (anthropic/deepseek/
- * moonshot/minimax) stay wired server-side for BYOK-direct + as the off-Vercel
- * escape hatch, but are not offered in MODELS while the gateway is the front door.
+ * markup) to Claude + DeepSeek models. It is the managed door's only provider
+ * (Phase 0, 2026-07-09; metered per-user in Phase 1). `openrouter` (Phase 1)
+ * is the promoted BYOK aggregator — one user key reaches Claude + GPT +
+ * DeepSeek via OpenRouter's Anthropic-Messages endpoint. The remaining direct
+ * providers (deepseek/moonshot/minimax) stay wired server-side for BYOK-direct
+ * + as the off-Vercel escape hatch, but are not offered in MODELS.
  */
-export type ProviderId = 'gateway' | 'anthropic' | 'deepseek' | 'moonshot' | 'minimax';
+export type ProviderId = 'gateway' | 'anthropic' | 'openrouter' | 'deepseek' | 'moonshot' | 'minimax';
 
 export interface ProviderInfo {
   id: ProviderId;
@@ -177,6 +179,7 @@ export interface ProviderInfo {
 export const PROVIDERS: readonly ProviderInfo[] = [
   { id: 'gateway', label: 'Vercel AI Gateway', keyConsoleUrl: 'https://vercel.com/d?to=%2F%5Bteam%5D%2F%7E%2Fai-gateway%2Fapi-keys', keyPlaceholder: 'vck_…' },
   { id: 'anthropic', label: 'Anthropic', keyConsoleUrl: 'https://console.anthropic.com/', keyPlaceholder: 'sk-ant-…' },
+  { id: 'openrouter', label: 'OpenRouter', keyConsoleUrl: 'https://openrouter.ai/settings/keys', keyPlaceholder: 'sk-or-…' },
   { id: 'deepseek', label: 'DeepSeek', keyConsoleUrl: 'https://platform.deepseek.com/', keyPlaceholder: 'sk-…' },
   { id: 'moonshot', label: 'Moonshot (Kimi)', keyConsoleUrl: 'https://platform.moonshot.ai/', keyPlaceholder: 'sk-…' },
   { id: 'minimax', label: 'MiniMax', keyConsoleUrl: 'https://platform.minimax.io/', keyPlaceholder: '…' },
@@ -188,24 +191,42 @@ export function providerInfo(id: ProviderId): ProviderInfo {
 }
 
 export interface ModelInfo {
-  /** wire model id sent upstream — unique across ALL providers by convention */
+  /**
+   * Registry id — what the client selects, stores, and sends; unique across
+   * ALL providers. Usually also the upstream wire id; where the same upstream
+   * slug exists under two providers (gateway vs OpenRouter both use
+   * "anthropic/claude-sonnet-4.6"), the registry id is prefixed and `wireId`
+   * carries the real slug.
+   */
   id: string;
   provider: ProviderId;
   /** picker label; includes a rough per-case cost hint (the user's cost dial) */
   label: string;
+  /** upstream model id, when it differs from the registry id */
+  wireId?: string;
 }
 
 /**
- * The offered models (Phase 0, 2026-07-09): a clean two-lane set routed through
- * the Vercel AI Gateway — one key/top-up covers both. Slugs + list prices
- * verified live on the gateway models API 2026-07-09 (zero markup: Sonnet 4.6
- * $3/$15 per M, DeepSeek V4 Pro $0.435/$0.87 per M; both 1M context). To offer
- * more later, add gateway slugs here (e.g. anthropic/claude-sonnet-5,
- * deepseek/deepseek-v4-flash) or re-surface the direct-provider models.
+ * The offered models (Phase 1, 2026-07-09).
+ * - gateway — the MANAGED door (server key, login-gated, per-user metered;
+ *   which of the two a signed-in user may run is tier-gated server-side) AND
+ *   available to a BYOK gateway key. Slugs + list prices verified live on the
+ *   gateway models API 2026-07-09 (zero markup: Sonnet 4.6 $3/$15 per M,
+ *   DeepSeek V4 Pro $0.435/$0.87 per M; both 1M context).
+ * - anthropic — BYOK-direct Claude lineup (the user's own Anthropic key).
+ * - openrouter — BYOK curated shortlist (one OpenRouter key reaches Claude +
+ *   GPT + DeepSeek; deliberately NOT the full 300-model catalog). Slugs
+ *   verified on the OpenRouter models API 2026-07-09.
  */
 export const MODELS: readonly ModelInfo[] = [
   { id: 'anthropic/claude-sonnet-4.6', provider: 'gateway', label: 'Claude Sonnet 4.6 (premium · ~$0.30/case)' },
   { id: 'deepseek/deepseek-v4-pro', provider: 'gateway', label: 'DeepSeek V4 Pro (budget · ~$0.02/case)' },
+  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6 (premium · ~$0.30/case)' },
+  { id: 'claude-opus-4-8', provider: 'anthropic', label: 'Claude Opus 4.8 (top marking · ~$1.50/case)' },
+  { id: 'claude-haiku-4-5', provider: 'anthropic', label: 'Claude Haiku 4.5 (fast · ~$0.10/case)' },
+  { id: 'openrouter/anthropic/claude-sonnet-4.6', provider: 'openrouter', wireId: 'anthropic/claude-sonnet-4.6', label: 'Claude Sonnet 4.6 (premium · ~$0.30/case)' },
+  { id: 'openrouter/openai/gpt-5.5', provider: 'openrouter', wireId: 'openai/gpt-5.5', label: 'GPT-5.5 (premium)' },
+  { id: 'openrouter/deepseek/deepseek-v4-pro', provider: 'openrouter', wireId: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro (budget · ~$0.02/case)' },
 ];
 
 export const MODEL_ALLOWLIST: readonly string[] = MODELS.map((m) => m.id);
@@ -217,37 +238,36 @@ export function modelProvider(model: string): ProviderId | undefined {
   return MODELS.find((m) => m.id === model)?.provider;
 }
 
+/** Upstream wire id for an allowlisted registry id (falls back to the id itself). */
+export function modelWireId(model: string): string {
+  const entry = MODELS.find((m) => m.id === model);
+  return entry?.wireId ?? model;
+}
+
 /** Client sends the SELECTED MODEL'S PROVIDER API key in this header on every /api/examiner call. */
 export const API_KEY_HEADER = 'x-user-api-key';
 
 // ---------------------------------------------------------------------------
-// Demo access (whitelisted magic-link sign-in — see SPEC.md "Demo access")
+// Managed access (email + 6-digit OTP sign-in, domain-tiered — Phase 1;
+// replaces the Phase-0 whitelist/magic-link "invited access"). Tier names,
+// caps, per-tier model lists, and the /api/auth/status shape live in
+// lib/tiers.ts (client-safe); the server core is lib/managed.ts.
 // ---------------------------------------------------------------------------
 
-/**
- * POST /api/demo/request ALWAYS answers 200 with exactly this message, whether
- * or not the email is whitelisted (no email enumeration — the text must stay
- * byte-identical for every input, but it may still be helpful).
- */
-export const DEMO_REQUEST_MESSAGE =
-  'If this address has been invited, a sign-in link is on its way — check your inbox and spam folder. The link works for 15 minutes. No email? Check the address is exactly the one the app owner invited, then send again.';
-
-/** POST /api/demo/request response body. */
-export interface DemoRequestResponse {
+/** POST /api/auth/request response body. */
+export interface AuthRequestResponse {
+  /**
+   * 'sent'        — a code is on its way (for ANY address on an eligible
+   *                 domain; whether an account exists is never revealed).
+   * 'byok_only'   — the domain is on neither allow-list: managed access is
+   *                 not available, use your own API key (domain eligibility
+   *                 is public product behaviour, not personal data).
+   */
+  status: 'sent' | 'byok_only';
   message: string;
 }
 
-/**
- * GET /api/demo/status response. `email` is masked (e.g. "c***@example.com") —
- * the full address never leaves the server.
- */
-export interface DemoStatus {
-  active: boolean;
-  email?: string;
-  /**
-   * Providers the invited-access server key covers (present only when active).
-   * Lets the client warn before a model whose provider has no server-held key
-   * is used keylessly. Absent/empty ⇒ assume the historical Anthropic-only setup.
-   */
-  providers?: ProviderId[];
+/** POST /api/auth/verify success body (the session cookie rides on the response). */
+export interface AuthVerifyResponse {
+  ok: true;
 }

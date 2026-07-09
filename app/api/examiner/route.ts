@@ -3,16 +3,31 @@
 // Multi-provider: every allowlisted model maps to a provider whose endpoint
 // speaks the Anthropic Messages API, so ONE @anthropic-ai/sdk code path serves
 // them all — the server switches only baseURL (fixed map in lib/providers.ts,
-// never client-supplied) and API key per provider.
+// never client-supplied) and API key per provider. The upstream call sends the
+// model's WIRE id (modelWireId — OpenRouter registry ids are prefixed
+// 'openrouter/…' to stay unique across providers); the REGISTRY id drives
+// everything else server-side: allowlist, provider selection, tier gate, pricing.
 //
 // Security invariants enforced here:
 // - The user's API key (API_KEY_HEADER) goes straight into the Anthropic SDK
 //   constructor. It is never stored, logged, or echoed (invariant 2). A BYOK
-//   key always takes precedence; without one, a valid demo_session cookie
-//   unlocks the server-held DEMO_*_API_KEY for the selected model's provider,
-//   which is handled under the exact same rules (SPEC.md "Demo access").
+//   key always takes precedence and is NEVER metered (the user's own money).
+// - The server-held gateway key is reachable ONLY through the MANAGED door
+//   (email+OTP sign-in — lib/managed.ts), behind the full chain: valid signed
+//   session cookie → tier grant re-resolved LIVE from the database (removing a
+//   domain/override revokes outstanding sessions immediately) → tier model
+//   gate → reserve-then-settle spend meter. There is NO anonymous path to the
+//   server key (the Phase-1 abuse fix): a keyless, sessionless request gets a
+//   plain 401 that reveals nothing about server configuration.
+// - Metering is reserve-then-settle (lib/managed.ts): the estimate is reserved
+//   only AFTER all request validation (a 400 can never consume allowance), and
+//   every exit path settles exactly once — success moves the REAL usage cost
+//   into spent, any failure releases the reservation uncharged (try/finally —
+//   no path may leak a reservation).
 // - Error payloads are spoiler-free: upstream provider errors are mapped to
-//   fixed generic strings; assembled prompts never appear in errors (invariant 1).
+//   fixed generic strings; assembled prompts never appear in errors
+//   (invariant 1). DB/driver error text is likewise never forwarded — a
+//   metering failure surfaces as a fixed 503 string.
 // - caseId resolves via manifest lookup only (invariant 3).
 // - search_kb queries/slugs stay server-side; only a count is returned (invariant 4).
 // - dryRun is gated to NODE_ENV === 'development', 404 otherwise (invariant 5).
@@ -29,7 +44,9 @@ import type {
 import {
   API_KEY_HEADER,
   DEFAULT_MODEL,
+  MODELS,
   modelProvider,
+  modelWireId,
   providerInfo,
   type ApiError,
   type CaseImage,
@@ -42,7 +59,17 @@ import {
 } from '@/lib/types';
 import { PROVIDER_CONFIG } from '@/lib/providers';
 import { ContentError, getCaseImages, getCaseMeta } from '@/lib/content';
-import { getDemoApiKey, readDemoSession } from '@/lib/demo';
+import {
+  managedEnabled,
+  managedGatewayKey,
+  readManagedSession,
+  reserveSpend,
+  resolveTier,
+  settleSpend,
+  type TierGrant,
+} from '@/lib/managed';
+import { actualCallUsd, estimateCallUsd } from '@/lib/pricing';
+import { TIER_LABELS, TIER_MODELS, type Tier } from '@/lib/tiers';
 import { buildSystem } from '@/lib/prompt';
 import { searchKb } from '@/lib/kb';
 import { buildMarkSheet, extractJson, markInstruction } from '@/lib/marksheet';
@@ -57,6 +84,14 @@ export const maxDuration = 60;
 const MAX_MESSAGES = 400;
 const MAX_MESSAGE_CHARS = 30_000;
 const MAX_TOOL_ITERATIONS = 3;
+
+/**
+ * Fixed client string for any database failure on the managed path (tier
+ * resolution / reservation). Driver error text is never forwarded — it can
+ * name hosts, tables, or connection-string fragments.
+ */
+const MANAGED_UNAVAILABLE =
+  'Managed access is temporarily unavailable — try again shortly, or add your own API key in Settings';
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -135,6 +170,19 @@ function accumulateUsage(total: TokenUsage, usage: Usage): void {
 }
 
 /**
+ * "Claude Sonnet 4.6 and DeepSeek V4 Pro" — the models a tier covers, for the
+ * model-gate 403. The public tier's common mistake is selecting Sonnet, so the
+ * message must NAME what IS covered, not just refuse. Labels come from the
+ * MODELS registry with the picker's cost hint ("(premium · ~$0.30/case)")
+ * stripped — it is noise inside an error sentence.
+ */
+function tierModelSummary(tier: Tier): string {
+  return TIER_MODELS[tier]
+    .map((id) => (MODELS.find((m) => m.id === id)?.label ?? id).replace(/\s*\(.*\)\s*$/, ''))
+    .join(' and ');
+}
+
+/**
  * Map upstream provider errors to spoiler-free client payloads. SDK error
  * messages are never forwarded (they could quote request content); every
  * branch returns a fixed generic string, parameterised only by the provider's
@@ -144,14 +192,14 @@ function accumulateUsage(total: TokenUsage, usage: Usage): void {
 function mapUpstreamError(
   err: unknown,
   provider: string,
-  usingDemoKey: boolean
+  usingManagedKey: boolean
 ): { status: number; message: string } {
   if (err instanceof Anthropic.AuthenticationError) {
-    // A BYOK 401 is the user's key; a demo-key 401 is the owner's server-held
-    // key — saying "Invalid API key" would send a keyless demo user hunting
-    // for a key they don't have.
-    return usingDemoKey
-      ? { status: 502, message: `The invited-access key was rejected by ${provider} — contact the app owner` }
+    // A BYOK 401 is the user's key; a managed-key 401 is the owner's
+    // server-held gateway key — saying "Invalid API key" would send a keyless
+    // signed-in user hunting for a key they don't have.
+    return usingManagedKey
+      ? { status: 502, message: `The managed-access key was rejected by ${provider} — contact the app owner` }
       : { status: 401, message: `Invalid ${provider} API key` };
   }
   if (err instanceof Anthropic.RateLimitError) {
@@ -166,9 +214,10 @@ function mapUpstreamError(
     if (s === 402) {
       // DeepSeek (prepaid top-up) documents 402 = insufficient balance — the
       // most likely failure a budget-tier user hits. Same owner/user split as
-      // the 401 mapping.
-      return usingDemoKey
-        ? { status: 502, message: `The invited-access ${provider} account is out of balance — contact the app owner` }
+      // the 401 mapping: on the managed path the empty account is the owner's
+      // gateway balance (manual top-up only — it CAN hit zero), never the user's.
+      return usingManagedKey
+        ? { status: 502, message: `The managed-access ${provider} account is out of balance — contact the app owner` }
         : { status: 402, message: `Your ${provider} account balance is insufficient — top up in the provider's console` };
     }
     if (s === 403) return { status: 502, message: 'The API key lacks permission for this model' };
@@ -213,6 +262,18 @@ function thinkingParam(opts: CallOpts): { thinking?: { type: 'disabled' } } {
   return opts.thinkingOff ? { thinking: { type: 'disabled' } } : {};
 }
 
+/**
+ * INTERNAL action results: the client payload plus `lastResponseId` — the id
+ * of the LAST upstream response of the call (chat loops tools, so the final
+ * iteration's id; marking is a single call). It is the settlement idempotency
+ * key for the managed meter and MUST be stripped before NextResponse.json:
+ * the wire shapes (ExaminerChatResponse / ExaminerMarkResponse) are unchanged,
+ * so the handler builds each response body as an explicit object — never a
+ * spread of these.
+ */
+type ChatResult = ExaminerChatResponse & { lastResponseId: string | null };
+type MarkResult = ExaminerMarkResponse & { lastResponseId: string | null };
+
 async function runChat(
   client: Anthropic,
   model: string,
@@ -220,7 +281,7 @@ async function runChat(
   transcript: ChatMessage[],
   images: CaseImage[],
   opts: CallOpts
-): Promise<ExaminerChatResponse | { error: string; status: number }> {
+): Promise<ChatResult | { error: string; status: number }> {
   const messages: MessageParam[] = transcript.map((m) => ({ role: m.role, content: m.content }));
   const last = messages[messages.length - 1];
   if (opts.revealReminder && last && last.role === 'user' && typeof last.content === 'string') {
@@ -285,7 +346,14 @@ async function runChat(
     // runMark, so the client keeps the transcript and offers a retry.
     return { error: 'The examiner returned no reply — try again', status: 502 };
   }
-  return { reply, kbLookups, usage, images: revealed.length ? revealed : undefined };
+  // `response` here is the final iteration's — its id keys the settle.
+  return {
+    reply,
+    kbLookups,
+    usage,
+    images: revealed.length ? revealed : undefined,
+    lastResponseId: response.id,
+  };
 }
 
 async function runMark(
@@ -295,8 +363,10 @@ async function runMark(
   transcript: ChatMessage[],
   meta: CaseMeta,
   opts: CallOpts
-): Promise<ExaminerMarkResponse | { error: string; status: number }> {
+): Promise<MarkResult | { error: string; status: number }> {
   const usage = emptyUsage();
+  // Marking is a single upstream call either way — its id keys the settle.
+  let lastResponseId: string | null = null;
   // Raw marksheet payload, from one of two strategies. Either way it is
   // validated server-side by the shared buildMarkSheet (only the case's marked
   // skills count, each at most once; total/maxTotal recomputed, never trusted).
@@ -322,6 +392,7 @@ async function runMark(
       ...thinkingParam(opts),
     });
     accumulateUsage(usage, response.usage);
+    lastResponseId = response.id;
     const toolUse = response.content.find(
       (b) => b.type === 'tool_use' && b.name === 'submit_marksheet'
     );
@@ -345,6 +416,7 @@ async function runMark(
       ...thinkingParam(opts),
     });
     accumulateUsage(usage, response.usage);
+    lastResponseId = response.id;
     const text = response.content
       .filter((b) => b.type === 'text')
       .map((b) => b.text)
@@ -359,7 +431,7 @@ async function runMark(
   const built = buildMarkSheet(rawMarksheet, meta);
   if ('error' in built) return { error: built.error, status: 502 };
 
-  return { marksheet: built, usage };
+  return { marksheet: built, usage, lastResponseId };
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +478,12 @@ export async function POST(request: Request) {
     }
     const providerCfg = PROVIDER_CONFIG[provider];
     const providerLabel = providerInfo(provider).label;
+    // Registry id vs wire id: `model` (the registry id) stays authoritative
+    // for everything server-side — allowlist, tier gate, pricing, the settle
+    // ledger, error paths — while EVERY upstream messages.create sends the
+    // wire id (OpenRouter registry ids are prefixed 'openrouter/…' to stay
+    // unique in the registry; gateway/Anthropic ids pass through unchanged).
+    const wireModel = modelWireId(model);
 
     // Photos available for this case (server-side map, keyed by caseCode). Only
     // sign-level captions + urls ever reach the client, and only via a reveal.
@@ -419,12 +497,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ systemBlocks, toolNames });
     }
 
-    // Invariant 2: the key is read from the header and passed straight to the
+    // Invariant 2: a key is read from the header and passed straight to the
     // SDK constructor. It is never stored, logged, or included in any output.
-    // BYOK takes precedence; with no header key, a valid demo_session cookie
-    // (signed, unexpired, still-whitelisted — see lib/demo.ts) unlocks the
-    // server-held demo key FOR THIS MODEL'S PROVIDER, which follows the same
-    // never-leaves-the-server rules. No key from either path → the existing 401.
+    // BYOK precedence is absolute: a request carrying API_KEY_HEADER runs on
+    // the user's own money — any allowlisted model, no metering, and it never
+    // touches the server key. With no header key, the MANAGED door is the ONLY
+    // route to the server-held gateway key, behind the full chain checked
+    // below: valid signed session cookie → tier grant re-resolved live from
+    // the DB → tier model gate → spend meter (after request validation). No
+    // session (or managed door unconfigured) → the plain 401 "Missing API key"
+    // (the client maps keyless 401s to sign-in guidance; an anonymous probe
+    // learns nothing about server configuration from it).
     //
     // Dev-only exception: with the local `claude -p` subscription bridge
     // enabled (NODE_ENV=development + DEV_CLAUDE_CLI=1 — see lib/devCli.ts), a
@@ -434,23 +517,54 @@ export async function POST(request: Request) {
     const byokKey = request.headers.get(API_KEY_HEADER)?.trim();
     const useDevCli = !byokKey && provider === 'anthropic' && devCliEnabled();
     let apiKey: string | null = null;
-    let usingDemoKey = false;
+    let usingManagedKey = false;
+    // Set only on the managed path — the meter's identity + allowance, carried
+    // to the reserve step below (which runs after ALL request validation).
+    let managed: { userId: string; allowanceUsd: number } | null = null;
     if (!useDevCli) {
-      apiKey = byokKey || (await getDemoApiKey(provider));
-      if (!apiKey) {
-        // A valid invited session whose server keys just don't cover this
-        // model's provider gets guidance, not "Missing API key" (the client
-        // reads a keyless 401 as session expiry). Post-authentication only —
-        // an anonymous request still sees the plain 401 below.
-        if (!byokKey && (await readDemoSession())) {
+      if (byokKey) {
+        apiKey = byokKey;
+      } else {
+        // THE MANAGED PATH. Fail closed to the plain 401 when the door is not
+        // fully configured OR there is no valid session — indistinguishable on
+        // purpose (no config oracle pre-auth).
+        const session = managedEnabled() ? await readManagedSession() : null;
+        if (!session) {
+          return jsonError('Missing API key', 401);
+        }
+        // Authorization is re-derived from the database on EVERY call — a
+        // domain/override removed since sign-in revokes the session right here.
+        let grant: TierGrant | null;
+        try {
+          grant = await resolveTier(session.email);
+        } catch {
+          // DB failure — fixed string only, nothing from the driver.
+          return jsonError(MANAGED_UNAVAILABLE, 503);
+        }
+        if (!grant) {
           return jsonError(
-            `Invited access doesn't cover ${providerLabel} models here — pick a different model, or add your own ${providerLabel} API key in Settings`,
+            'Managed access is no longer available for this account — add your own API key in Settings, or contact the app owner',
             403
           );
         }
-        return jsonError('Missing API key', 401);
+        // Tier model gate: the managed door only ever routes through the
+        // gateway, and only to the tier's covered models. The common case is
+        // a public-tier user selecting Sonnet — name what IS covered.
+        if (provider !== 'gateway' || !TIER_MODELS[grant.tier].includes(model)) {
+          return jsonError(
+            `Managed access (${TIER_LABELS[grant.tier]} tier) covers ${tierModelSummary(grant.tier)} — pick one of those in Settings, or add your own API key`,
+            403
+          );
+        }
+        apiKey = managedGatewayKey();
+        if (!apiKey) {
+          // Config drift (managedEnabled() implies the key, but never assume):
+          // fail closed with the same generic 401 as an anonymous request.
+          return jsonError('Missing API key', 401);
+        }
+        usingManagedKey = true;
+        managed = { userId: session.sub, allowanceUsd: grant.allowanceUsd };
       }
-      usingDemoKey = !byokKey;
     }
 
     const rawMessages = body.messages;
@@ -505,18 +619,114 @@ export async function POST(request: Request) {
       thinkingOff: providerCfg.thinkingOff,
     };
 
-    try {
-      if (action === 'chat') {
-        const result = await runChat(client, model, system, rawMessages, caseImages, callOpts);
-        if ('error' in result) return jsonError(result.error, result.status);
-        return NextResponse.json(result);
+    // METERING — managed path only (never BYOK, never the dev CLI, and dryRun
+    // returned long ago). Reserve-then-settle (lib/managed.ts): the estimate
+    // is reserved here, AFTER every request validation above, so a 400 can
+    // never consume allowance. `openReservation` is the settle obligation —
+    // cleared by the success settle, released uncharged by the finally on
+    // every other exit. Cap refusals are pre-call: nothing was reserved, so
+    // there is nothing to settle.
+    // The reservation carries the exact period/day it was booked against, so
+    // the settle updates the SAME meter rows even if the call crosses an SGT
+    // midnight/month boundary between reserve and settle (recomputing the keys
+    // at settle would strand the reservation and lose the charge).
+    let openReservation: { userId: string; estUsd: number; period: string; day: string } | null =
+      null;
+    if (managed) {
+      const estUsd = estimateCallUsd(
+        model,
+        action,
+        rawMessages.reduce((chars, m) => chars + m.content.length, 0)
+      );
+      let reserved: Awaited<ReturnType<typeof reserveSpend>>;
+      try {
+        reserved = await reserveSpend(managed.userId, estUsd, managed.allowanceUsd);
+      } catch {
+        // DB failure — fixed string only, nothing from the driver.
+        return jsonError(MANAGED_UNAVAILABLE, 503);
       }
-      const result = await runMark(client, model, system, rawMessages, meta, callOpts);
+      if (reserved.result === 'user_cap') {
+        return jsonError(
+          `You've used this month's managed allowance (US$${managed.allowanceUsd.toFixed(2)}) — it resets at the start of next month (Singapore time). Add your own API key in Settings to keep practising`,
+          402
+        );
+      }
+      if (reserved.result === 'global_cap') {
+        return jsonError(
+          'The app-wide daily managed budget is used up — try again tomorrow, or add your own API key in Settings',
+          429
+        );
+      }
+      openReservation = {
+        userId: managed.userId,
+        estUsd,
+        period: reserved.period,
+        day: reserved.day,
+      };
+    }
+
+    /**
+     * Success-path settle: move the reservation into real spend at the ACTUAL
+     * cost from our own price table, keyed idempotent on the last upstream
+     * response id, against the reservation's own period/day. settleSpend never
+     * throws (it logs), so the meter can never turn a delivered examiner reply
+     * into a user-facing error.
+     */
+    const settleSuccess = async (usage: TokenUsage, generationId: string | null) => {
+      const reservation = openReservation;
+      if (!reservation) return;
+      await settleSpend(
+        reservation.userId,
+        reservation.estUsd,
+        {
+          model,
+          action,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheReadTokens: usage.cacheReadTokens,
+          cacheWriteTokens: usage.cacheWriteTokens,
+          costUsd: actualCallUsd(model, usage),
+          generationId,
+        },
+        reservation.period,
+        reservation.day
+      );
+      openReservation = null;
+    };
+
+    try {
+      // Response bodies are built as EXPLICIT objects (never a spread of the
+      // internal result): the internal lastResponseId must not leak, and the
+      // wire shapes ExaminerChatResponse / ExaminerMarkResponse are unchanged.
+      if (action === 'chat') {
+        const result = await runChat(client, wireModel, system, rawMessages, caseImages, callOpts);
+        if ('error' in result) return jsonError(result.error, result.status);
+        await settleSuccess(result.usage, result.lastResponseId);
+        const payload: ExaminerChatResponse = {
+          reply: result.reply,
+          kbLookups: result.kbLookups,
+          usage: result.usage,
+          images: result.images,
+        };
+        return NextResponse.json(payload);
+      }
+      const result = await runMark(client, wireModel, system, rawMessages, meta, callOpts);
       if ('error' in result) return jsonError(result.error, result.status);
-      return NextResponse.json(result);
+      await settleSuccess(result.usage, result.lastResponseId);
+      const payload: ExaminerMarkResponse = { marksheet: result.marksheet, usage: result.usage };
+      return NextResponse.json(payload);
     } catch (err) {
-      const mapped = mapUpstreamError(err, providerLabel, usingDemoKey);
+      const mapped = mapUpstreamError(err, providerLabel, usingManagedKey);
       return jsonError(mapped.message, mapped.status);
+    } finally {
+      // Every exit that did not settle successfully — an upstream throw, an
+      // unusable-reply {error} result, even an unexpected throw while building
+      // the response — releases the reservation uncharged. No path may leak a
+      // reservation (it would silently eat the user's monthly allowance).
+      const leftover = openReservation;
+      if (leftover) {
+        await settleSpend(leftover.userId, leftover.estUsd, null, leftover.period, leftover.day);
+      }
     }
   } catch (err) {
     // Never log the error object (it could reference request internals);

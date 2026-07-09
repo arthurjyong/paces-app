@@ -20,7 +20,7 @@ interface ChatPaneProps {
   markUsage: TokenUsage | null;
   hasKey: boolean;
   /** Guidance shown when hasKey is false — provider-aware, built by the parent
-   *  (covers both "no key for this provider" and "invited access doesn't cover
+   *  (covers both "no key for this provider" and "managed access doesn't cover
    *  this model"). */
   keyNotice: string;
   onBegin: () => void;
@@ -234,7 +234,7 @@ export default function ChatPane({
                   type="button"
                   onClick={onRetry}
                   // !hasKey mirrors the Begin gate: on a restored encounter the
-                  // demo/dev-bridge probes may still be in flight — an early
+                  // managed/dev-bridge probes may still be in flight — an early
                   // click would misfire the "add your API key" error.
                   disabled={pending !== null || !hasKey}
                   className="shrink-0 rounded border border-red-400 px-2 py-0.5 text-xs font-medium hover:bg-red-100 disabled:opacity-40 dark:border-red-700 dark:hover:bg-red-900/40"

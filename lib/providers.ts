@@ -96,6 +96,26 @@ export const PROVIDER_CONFIG: Record<ProviderId, ProviderServerConfig> = {
     systemAsString: false,
     thinkingOff: false,
   },
+  // OpenRouter — the promoted BYOK aggregator (Phase 1): one user key reaches
+  // Claude + GPT + DeepSeek through its Anthropic-Messages endpoint, which the
+  // SDK reaches by appending /v1/messages to this baseURL (docs pin the
+  // baseURL WITHOUT /v1 — adding it would produce /v1/v1/messages). Verified
+  // against the OpenRouter OpenAPI spec + docs 2026-07-09:
+  // - auth: Bearer is the only documented scheme (SDK authToken option).
+  // - forced tool_choice {type:'tool'}: full Anthropic union supported, and
+  //   the endpoint translates for ANY underlying model (GPT included).
+  // - system as cache_control blocks: supported (Anthropic-model caching
+  //   passes through; ignored elsewhere) — keep the blocks.
+  // - revealReminder true: the curated list includes non-Claude models.
+  openrouter: {
+    baseURL: 'https://openrouter.ai/api',
+    auth: 'bearer',
+    demoEnvVar: 'DEMO_OPENROUTER_API_KEY',
+    revealReminder: true,
+    forcedToolChoice: true,
+    systemAsString: false,
+    thinkingOff: false,
+  },
   deepseek: {
     baseURL: 'https://api.deepseek.com/anthropic',
     auth: 'x-api-key',

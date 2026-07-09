@@ -13,8 +13,8 @@ interface SettingsProps {
   model: string;
   /** provider of the selected model — its key input is the one shown */
   activeProvider: ProviderId;
-  /** True when an invited-access session covers the active provider — the key is then optional. */
-  demoCovers: boolean;
+  /** True when the signed-in managed session covers the selected model — the key is then optional. */
+  managedCovers: boolean;
   onProviderKeyChange: (provider: ProviderId, value: string) => void;
   onModelChange: (value: string) => void;
 }
@@ -23,11 +23,11 @@ export default function Settings({
   providerKeys,
   model,
   activeProvider,
-  demoCovers,
+  managedCovers,
   onProviderKeyChange,
   onModelChange,
 }: SettingsProps) {
-  // Collapsed by default: invited users never need this section, and BYOK
+  // Collapsed by default: managed users never need this section, and BYOK
   // users open it once. The API-key box must not be the first thing shown.
   const [open, setOpen] = useState(false);
 
@@ -104,9 +104,9 @@ export default function Settings({
                 Get a {active.label} key
               </a>
             </p>
-            {demoCovers && (
+            {managedCovers && (
               <p className="mt-1 text-xs leading-5 text-teal-700 dark:text-teal-300">
-                Not needed while invited access is active.
+                Not needed while managed access covers this model.
               </p>
             )}
             {savedElsewhere.length > 0 && (
