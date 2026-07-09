@@ -64,7 +64,7 @@ async function handle(request: Request) {
       const ok: AuthRequestResponse = {
         status: 'byok_only',
         message:
-          'Free sign-in is open to common email providers (Gmail, Outlook, and similar) and Singapore public-healthcare emails. This address is not on the list — you can still practise free with your own Claude API key in Settings.',
+          "This email isn't set up for free sign-in yet, but you can still practise free right away — add your own Claude API key in Settings.",
       };
       return NextResponse.json(ok);
     }

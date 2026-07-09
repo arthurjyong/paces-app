@@ -157,7 +157,7 @@ export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPa
                   Signed in as {status.email}
                 </p>
                 <p className="mt-0.5 text-xs text-teal-700/80 dark:text-teal-300/80">
-                  Free practice — no API key needed. Your study history syncs to this account.
+                  Free practice, with your study history synced across your devices.
                 </p>
               </div>
               <button
@@ -179,10 +179,9 @@ export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPa
               }}
             >
               <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                Sign in with your email for free practice — no API key needed, and your study
-                history syncs across devices. Open to common email providers (Gmail, Outlook, and
-                similar) and Singapore public-healthcare emails. Or use your own Claude API key,
-                always free.
+                Sign in with your email to practise free with DeepSeek AI, with your study history
+                synced across your devices. Want a smarter study partner? Add your own Claude API
+                key in Settings for a more advanced AI — your history still syncs.
               </p>
               <input
                 type="email"
