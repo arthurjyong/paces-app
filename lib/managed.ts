@@ -274,6 +274,33 @@ function hashOtp(email: string, code: string): string {
 }
 
 /**
+ * Branded HTML body for the sign-in code email. Inline styles only (email
+ * clients strip <style>/<head>); the logo is a hosted PNG (blocked-image-safe
+ * because the code is also plain text). The code is HTML-escaped defensively
+ * even though it is always six digits.
+ */
+function otpEmailHtml(code: string): string {
+  const base = process.env.APP_BASE_URL?.trim() || 'https://pacesbuddy.com';
+  const safeCode = code.replace(/[^0-9]/g, '');
+  return `<div style="background:#f4f4f5;padding:32px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:440px;max-width:100%;background:#ffffff;border-radius:14px;border:1px solid #e4e4e7;">
+      <tr><td style="padding:32px 32px 4px;text-align:center;">
+        <img src="${base}/email-logo.png" width="56" height="56" alt="PACES Buddy" style="display:inline-block;border-radius:12px;">
+        <div style="font-size:18px;font-weight:600;color:#18181b;margin-top:12px;">PACES Buddy</div>
+      </td></tr>
+      <tr><td style="padding:12px 32px 0;text-align:center;color:#52525b;font-size:14px;line-height:22px;">Your sign-in code is:</td></tr>
+      <tr><td style="padding:14px 32px;text-align:center;">
+        <span style="display:inline-block;font-size:30px;font-weight:700;letter-spacing:8px;color:#0d9488;background:#f0fdfa;border:1px solid #99f6e4;border-radius:10px;padding:14px 22px;font-family:'SF Mono',Menlo,Consolas,monospace;">${safeCode}</span>
+      </td></tr>
+      <tr><td style="padding:0 32px 30px;text-align:center;color:#71717a;font-size:13px;line-height:20px;">Type it into the app within 10 minutes.<br>If you didn't request this, just ignore it — nobody can sign in without the code.</td></tr>
+    </table>
+    <div style="color:#a1a1aa;font-size:11px;margin-top:16px;">PACES Buddy · AI practice partner for MRCP PACES</div>
+  </td></tr></table>
+</div>`;
+}
+
+/**
  * Send the code via SMTP. Dev without SMTP: log the code to the server
  * console so the flow can be exercised end-to-end. Production with missing/
  * partial SMTP: loud error WITHOUT the code (a live credential must never
@@ -319,7 +346,10 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
       from: `"PACES Buddy" <${fromAddress}>`,
       to: email,
       subject: `${code} is your PACES Buddy sign-in code`,
+      // Plain-text fallback (also the whole message for clients that block HTML
+      // — the code is always readable, image or not).
       text: `Hello,\n\nYour PACES Buddy sign-in code is:\n\n    ${code}\n\nType it into the app within 10 minutes. If you did not request this email, just ignore it — nobody can sign in without the code.\n`,
+      html: otpEmailHtml(code),
     });
   } catch (err) {
     console.error(

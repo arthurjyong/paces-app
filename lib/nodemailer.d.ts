@@ -8,6 +8,8 @@ declare module 'nodemailer' {
     to: string;
     subject: string;
     text: string;
+    /** HTML body; clients that don't render it fall back to `text`. */
+    html?: string;
   }
 
   export interface Transporter {
