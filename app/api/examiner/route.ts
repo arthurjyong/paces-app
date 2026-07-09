@@ -45,7 +45,6 @@ import type {
 import {
   API_KEY_HEADER,
   DEFAULT_MODEL,
-  MODELS,
   modelProvider,
   providerInfo,
   type ApiError,
@@ -69,7 +68,7 @@ import {
   type TierGrant,
 } from '@/lib/managed';
 import { actualCallUsd, estimateCallUsd } from '@/lib/pricing';
-import { TIER_LABELS, TIER_MODELS, type Tier } from '@/lib/tiers';
+import { TIER_MODELS } from '@/lib/tiers';
 import { buildSystem } from '@/lib/prompt';
 import { searchKb } from '@/lib/kb';
 import { buildMarkSheet, extractJson, markInstruction } from '@/lib/marksheet';
@@ -167,19 +166,6 @@ function accumulateUsage(total: TokenUsage, usage: Usage): void {
   total.outputTokens += usage.output_tokens ?? 0;
   total.cacheReadTokens += usage.cache_read_input_tokens ?? 0;
   total.cacheWriteTokens += usage.cache_creation_input_tokens ?? 0;
-}
-
-/**
- * "Claude Sonnet 4.6 and DeepSeek V4 Pro" — the models a tier covers, for the
- * model-gate 403. The public tier's common mistake is selecting Sonnet, so the
- * message must NAME what IS covered, not just refuse. Labels come from the
- * MODELS registry with the picker's cost hint ("(premium · ~$0.30/case)")
- * stripped — it is noise inside an error sentence.
- */
-function tierModelSummary(tier: Tier): string {
-  return TIER_MODELS[tier]
-    .map((id) => (MODELS.find((m) => m.id === id)?.label ?? id).replace(/\s*\(.*\)\s*$/, ''))
-    .join(' and ');
 }
 
 /**
@@ -542,11 +528,12 @@ export async function POST(request: Request) {
           );
         }
         // Tier model gate: the managed door only ever routes through the
-        // gateway, and only to the tier's covered models. The common case is
-        // a public-tier user selecting Sonnet — name what IS covered.
+        // gateway, and only to the tier's covered model(s). The free tier's
+        // model is deliberately never named to the user (owner decision), so
+        // the message stays generic — "pick free practice" — not "covers X".
         if (provider !== 'gateway' || !TIER_MODELS[grant.tier].includes(model)) {
           return jsonError(
-            `Managed access (${TIER_LABELS[grant.tier]} tier) covers ${tierModelSummary(grant.tier)} — pick one of those in Settings, or add your own API key`,
+            "Free practice doesn't cover the selected model — choose the free practice option in Settings, or add your own Claude API key.",
             403
           );
         }
@@ -641,13 +628,13 @@ export async function POST(request: Request) {
       }
       if (reserved.result === 'user_cap') {
         return jsonError(
-          `You've used this month's managed allowance (US$${managed.allowanceUsd.toFixed(2)}) — it resets at the start of next month (Singapore time). Add your own API key in Settings to keep practising`,
+          "You've used up your free practice credit. To request more, contact the app owner — or add your own Claude API key in Settings to keep practising for free.",
           402
         );
       }
       if (reserved.result === 'global_cap') {
         return jsonError(
-          'The app-wide daily managed budget is used up — try again tomorrow, or add your own API key in Settings',
+          'Free practice is at capacity for today — try again tomorrow, or add your own Claude API key in Settings.',
           429
         );
       }

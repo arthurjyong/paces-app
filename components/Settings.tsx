@@ -10,7 +10,7 @@
 // Collapsible.
 
 import { useState } from 'react';
-import { BYOK_MODELS, MODELS, modelProvider, providerInfo } from '@/lib/types';
+import { BYOK_MODELS, modelProvider, providerInfo } from '@/lib/types';
 
 interface SettingsProps {
   /** the user's own Claude (Anthropic) key — the only BYOK key now */
@@ -44,7 +44,6 @@ export default function Settings({
   // model is selected → the managed session covers it (or the user should sign
   // in); either way we never ask for a key.
   const isByokModel = modelProvider(model) === 'anthropic';
-  const label = (id: string) => MODELS.find((m) => m.id === id)?.label ?? id;
 
   return (
     <section className="border-b border-zinc-200 dark:border-zinc-800">
@@ -73,12 +72,11 @@ export default function Settings({
               className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950"
             >
               {signedIn && freeModels.length > 0 && (
-                <optgroup label="Free with sign-in">
-                  {freeModels.map((id) => (
-                    <option key={id} value={id}>
-                      {label(id)}
-                    </option>
-                  ))}
+                // Free practice runs on a fixed model server-side; we never
+                // surface which one (owner decision) — a single "Free practice"
+                // option, whatever the tier's model id is.
+                <optgroup label="Signed in">
+                  <option value={freeModels[0]}>Free practice</option>
                 </optgroup>
               )}
               <optgroup label="Your own Claude key">

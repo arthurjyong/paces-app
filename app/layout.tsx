@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PACES Buddy — AI examiner",
-  description: "PACES Buddy — AI examiner for MRCP PACES",
+  title: "PACES Buddy — AI practice partner",
+  description: "PACES Buddy — AI practice partner for MRCP PACES",
   // Pre-launch (audience of one) AND the interim build carries third-party
   // clinical images — keep it out of search indexes until images are swapped to
   // open-licensed sources. Remove once the app is intended to be discoverable.

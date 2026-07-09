@@ -64,7 +64,7 @@ async function handle(request: Request) {
       const ok: AuthRequestResponse = {
         status: 'byok_only',
         message:
-          'Managed access covers major consumer email providers and approved SG-healthcare institutions. This address is not on either list — you can still practise free by adding your own API key in Settings.',
+          'Free sign-in is open to common email providers (Gmail, Outlook, and similar) and Singapore public-healthcare emails. This address is not on the list — you can still practise free with your own Claude API key in Settings.',
       };
       return NextResponse.json(ok);
     }

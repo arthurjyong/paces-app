@@ -97,6 +97,26 @@ CREATE TABLE IF NOT EXISTS user_balances (
   PRIMARY KEY (user_id, period)
 );
 
+-- Study-history sync (owner decision 2026-07-09): a SIGNED-IN user's archived
+-- encounters are stored server-side so their history follows them across
+-- devices. This is a deliberate, scoped exception to the app's otherwise
+-- stateless backend — ONLY logged-in users, ONLY their own already-client-side
+-- data (case meta + stem + their transcript; NO hidden answer key ever touches
+-- the client blob, so nothing spoiler-bearing is stored here). Records are
+-- immutable snapshots keyed by the client's own id; `deleted` is a tombstone so
+-- a delete on one device propagates (and a stale device can't resurrect it).
+CREATE TABLE IF NOT EXISTS study_history (
+  user_id BIGINT NOT NULL REFERENCES users (id),
+  client_id TEXT NOT NULL,
+  archived_at TIMESTAMPTZ NOT NULL,
+  payload JSONB NOT NULL,
+  deleted BOOLEAN NOT NULL DEFAULT false,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, client_id)
+);
+CREATE INDEX IF NOT EXISTS study_history_user_idx
+  ON study_history (user_id, archived_at DESC);
+
 -- Global daily backstop (plan §4.4): bounds total managed spend per SGT day
 -- regardless of per-user math. The cap itself is the MANAGED_DAILY_CAP_USD
 -- env var (checked in the same conditional UPDATE), not a column.
@@ -125,32 +145,42 @@ INSERT INTO allowed_domains (domain, tier, note) VALUES
   ('me.com',         'public', 'consumer allow-list (icloud alias domain)')
 ON CONFLICT (domain) DO NOTHING;
 
--- Institutional tier: approved SG-healthcare domains. Receiving the OTP at
--- the domain IS the proof of affiliation (the institution controls the
--- mailbox). ⚠️ Arthur curates this list — these seeds cover MOHH/MOH and the
--- main cluster domains; add/remove with plain INSERT/DELETE, no redeploy.
+-- Institutional tier: Singapore public-healthcare domains — MOHH/MOH + the
+-- three clusters (SingHealth, NUHS, NHG) and their major hospitals (owner
+-- decision 2026-07-09: include all major SG hospitals, e.g. NTFGH, AH).
+-- Receiving the OTP at the domain IS the proof of affiliation. ⚠️ Owner-curated
+-- — add/remove with a plain INSERT/DELETE, no redeploy. NB tiers are UNIFORM
+-- right now (both get DeepSeek + US$1), so 'institutional' vs 'public' is just
+-- bookkeeping (which emails may register free) until re-differentiated.
 INSERT INTO allowed_domains (domain, tier, note) VALUES
   ('mohh.com.sg',       'institutional', 'MOH Holdings'),
   ('moh.gov.sg',        'institutional', 'Ministry of Health'),
+  ('ihis.com.sg',       'institutional', 'Synapxe / IHiS'),
+  ('duke-nus.edu.sg',   'institutional', 'Duke-NUS'),
+  -- SingHealth cluster
   ('singhealth.com.sg', 'institutional', 'SingHealth cluster'),
-  ('sgh.com.sg',        'institutional', 'SingHealth — SGH'),
+  ('sgh.com.sg',        'institutional', 'SingHealth — Singapore GH'),
   ('cgh.com.sg',        'institutional', 'SingHealth — Changi GH'),
   ('kkh.com.sg',        'institutional', 'SingHealth — KKH'),
   ('skh.com.sg',        'institutional', 'SingHealth — Sengkang GH'),
-  ('nccs.com.sg',       'institutional', 'SingHealth — NCCS'),
-  ('nhcs.com.sg',       'institutional', 'SingHealth — NHCS'),
-  ('snec.com.sg',       'institutional', 'SingHealth — SNEC'),
-  ('nni.com.sg',        'institutional', 'SingHealth — NNI'),
+  ('nccs.com.sg',       'institutional', 'SingHealth — National Cancer Centre'),
+  ('nhcs.com.sg',       'institutional', 'SingHealth — National Heart Centre'),
+  ('snec.com.sg',       'institutional', 'SingHealth — National Eye Centre'),
+  ('nni.com.sg',        'institutional', 'SingHealth — National Neuroscience Inst'),
+  ('ndcs.com.sg',       'institutional', 'SingHealth — National Dental Centre'),
+  -- NUHS cluster
   ('nuhs.edu.sg',       'institutional', 'NUHS cluster'),
+  ('nuh.com.sg',        'institutional', 'NUHS — National University Hospital'),
+  ('ntfgh.com.sg',      'institutional', 'NUHS — Ng Teng Fong GH'),
+  ('ah.com.sg',         'institutional', 'NUHS — Alexandra Hospital'),
+  -- NHG cluster
   ('nhg.com.sg',        'institutional', 'NHG cluster'),
   ('ttsh.com.sg',       'institutional', 'NHG — Tan Tock Seng'),
   ('ktph.com.sg',       'institutional', 'NHG — Khoo Teck Puat'),
   ('wh.com.sg',         'institutional', 'NHG — Woodlands Health'),
-  ('imh.com.sg',        'institutional', 'NHG — IMH'),
+  ('imh.com.sg',        'institutional', 'NHG — Institute of Mental Health'),
   ('nsc.com.sg',        'institutional', 'NHG — National Skin Centre'),
-  ('ncid.sg',           'institutional', 'NCID'),
-  ('ihis.com.sg',       'institutional', 'Synapxe / IHiS'),
-  ('duke-nus.edu.sg',   'institutional', 'Duke-NUS')
+  ('ncid.sg',           'institutional', 'NHG — National Centre for Infectious Diseases')
 ON CONFLICT (domain) DO NOTHING;
 
 -- The two pre-Phase-1 invited users (were on DEMO_WHITELIST): their gmail

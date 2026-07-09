@@ -41,15 +41,40 @@ import ChatPane from '@/components/ChatPane';
 import HistoryList from '@/components/HistoryList';
 import {
   archiveEncounter,
+  clearAllArchived,
   deleteArchived,
   listArchived,
   type ArchivedEncounter,
 } from '@/components/historyStore';
+import {
+  deleteRecordOnServer,
+  pushRecordToServer,
+  syncHistory,
+} from '@/components/historySync';
 
 // Per-provider BYOK key slots. The Anthropic key keeps its historical
 // un-suffixed slot so existing users' keys survive this change.
 const LS_API_KEY = 'paces.apiKey';
 const LS_MODEL = 'paces.model';
+
+// The opaque identity (ManagedStatus.id, or 'anon' signed out) that the local
+// History IndexedDB store belongs to — persisted so a reload doesn't re-wipe a
+// returning user's synced history, but a DIFFERENT identity triggers a wipe.
+const LS_HISTORY_OWNER = 'paces.historyOwner';
+function readHistoryOwner(): string {
+  try {
+    return window.localStorage.getItem(LS_HISTORY_OWNER) ?? '';
+  } catch {
+    return '';
+  }
+}
+function writeHistoryOwner(owner: string): void {
+  try {
+    window.localStorage.setItem(LS_HISTORY_OWNER, owner);
+  } catch {
+    // ignore — the effect still wipes on mismatch each load
+  }
+}
 
 function noKeyError(provider: ProviderId): string {
   return `Sign in under "Account" in the sidebar to practise on the app's managed access — or add your ${providerInfo(provider).label} API key in Settings.`;
@@ -115,8 +140,8 @@ export default function Home() {
   const [markUsage, setMarkUsage] = useState<TokenUsage | null>(null);
 
   // Managed access (httpOnly cookie session — the client only ever sees the
-  // ManagedStatus projection: masked email, tier, covered models, this
-  // month's meter).
+  // ManagedStatus projection: opaque id, masked email, tier, covered models —
+  // no spend numbers).
   const [managedStatus, setManagedStatus] = useState<ManagedStatus | null>(null);
 
   // Mobile sidebar drawer.
@@ -163,11 +188,12 @@ export default function Home() {
   const [cliBridge, setCliBridge] = useState(false);
 
   const managedActive = managedStatus?.active === true;
-  // The tier's free (gateway) models are selectable only while signed in; the
+  // The tier's free (gateway) model is selectable only while signed in; the
   // BYOK Claude lineup is always selectable. If the stored choice isn't
   // available (empty/unchosen, or a free model kept from a prior session now
-  // signed out), fall back to the tier's first free model when signed in
-  // (MOHH → Sonnet, consumer → DeepSeek) else Claude Sonnet.
+  // signed out), fall back to the tier's first free model when signed in (both
+  // tiers currently resolve to the single free DeepSeek model — see TIER_MODELS
+  // in lib/tiers.ts) else the default BYOK Claude model.
   const freeModels = managedActive ? (managedStatus?.models ?? []) : [];
   const explicitModel = (MODEL_ALLOWLIST as readonly string[]).includes(storedModel) ? storedModel : '';
   const model =
@@ -199,11 +225,58 @@ export default function Home() {
     [setStoredModel],
   );
 
+  // Study-history sync + shared-device safety. The local History store
+  // (IndexedDB) is device-keyed, not user-keyed, so it MUST be wiped whenever
+  // the signed-in identity changes — on login, sign-out, session expiry, OR a
+  // silent account switch (A walks away, B signs in without A signing out) —
+  // otherwise B would read (and could re-upload) A's transcripts. We track the
+  // opaque owner id (ManagedStatus.id, or 'anon' when signed out) of whoever
+  // the local store belongs to, in localStorage so it survives reloads.
+  const historySyncedRef = useRef(false);
+  const [historyReady, setHistoryReady] = useState(true);
+  useEffect(() => {
+    // Wait for the crash-safe restore AND a settled managed status (null = still
+    // loading; acting on it would misread a signed-in user as 'anon').
+    if (!restoreDone || managedStatus === null) return;
+    const currentOwner = managedActive && managedStatus.id ? managedStatus.id : 'anon';
+    // Unset (first load, or an existing anon user pre-dating this feature) reads
+    // as 'anon' — so an anonymous browser's existing local history is NOT wiped
+    // on upgrade; only a genuine identity boundary (any sign-in/out/switch) wipes.
+    const recorded = readHistoryOwner() || 'anon';
+    if (recorded === currentOwner) {
+      // Same identity as the local store — sync once (if signed in).
+      if (managedActive && !historySyncedRef.current) {
+        historySyncedRef.current = true;
+        void (async () => {
+          const changed = await syncHistory();
+          if (changed) void refreshHistory();
+        })();
+      }
+      return;
+    }
+    // Identity changed — the local store belongs to a different user (or to a
+    // prior session). Hide + wipe it BEFORE showing or syncing anything.
+    writeHistoryOwner(currentOwner);
+    historySyncedRef.current = false;
+    setHistory([]); // drop the prior owner's rows from view immediately
+    setHistoryReady(false); // disable History interaction during the wipe
+    void (async () => {
+      try {
+        await clearAllArchived();
+      } catch {
+        // ignore — worst case a refresh below re-reads stale rows
+      }
+      if (managedActive) await syncHistory();
+      await refreshHistory();
+      setHistoryReady(true);
+    })();
+  }, [restoreDone, managedActive, managedStatus, refreshHistory]);
+
   // Fetch managed-access status (best-effort: failures just mean the
   // BYOK-only experience). Also re-invoked when an examiner call 401s without
   // a BYOK key (so the sidebar can't keep claiming "signed in" after
-  // expiry/revocation) and after every successful keyless-managed call (so
-  // the sidebar's usage meter tracks spend live).
+  // expiry/revocation) and after every successful keyless-managed call (so the
+  // sidebar reflects the current session/tier state).
   const refreshManagedStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/auth/status');
@@ -326,21 +399,25 @@ export default function Home() {
   const archiveCurrent = useCallback(async (): Promise<boolean> => {
     if (!publicCase || entries.length === 0) return true;
     const archivedAt = new Date().toISOString();
+    const record: ArchivedEncounter = {
+      id: `${archivedAt}_${publicCase.meta.id}`,
+      archivedAt,
+      meta: publicCase.meta,
+      stem: publicCase.stem,
+      entries,
+      marksheet,
+      markUsage,
+    };
     try {
-      await archiveEncounter({
-        id: `${archivedAt}_${publicCase.meta.id}`,
-        archivedAt,
-        meta: publicCase.meta,
-        stem: publicCase.stem,
-        entries,
-        marksheet,
-        markUsage,
-      });
+      await archiveEncounter(record);
+      // If signed in, sync this record to the server (best-effort; local is the
+      // source of truth either way). Fire-and-forget — never blocks the leave.
+      if (managedActive) void pushRecordToServer(record);
       return true;
     } catch {
       return false;
     }
-  }, [publicCase, entries, marksheet, markUsage]);
+  }, [publicCase, entries, marksheet, markUsage, managedActive]);
 
   const selectCase = useCallback(
     async (id: string) => {
@@ -427,10 +504,32 @@ export default function Home() {
       } catch {
         // leave the row; user can retry
       }
+      // If signed in, tombstone it server-side so the delete propagates across
+      // devices (best-effort).
+      if (managedActive) void deleteRecordOnServer(id);
       void refreshHistory();
     },
-    [refreshHistory],
+    [refreshHistory, managedActive],
   );
+
+  /**
+   * Explicit sign-out: wipe the LOCAL History store so a shared device never
+   * shows the next signed-in user the previous user's records. The records are
+   * safe on the server (synced), and re-pulled on the owner's next sign-in.
+   * (Session EXPIRY does not clear — that's transient, same user.)
+   */
+  const handleSignOut = useCallback(async () => {
+    historySyncedRef.current = false;
+    writeHistoryOwner('anon'); // the store is now unowned; the effect won't re-wipe
+    setHistory([]);
+    try {
+      await clearAllArchived();
+    } catch {
+      // ignore — worst case the next user sees stale local rows until refresh
+    }
+    void refreshHistory();
+    void refreshManagedStatus();
+  }, [refreshHistory, refreshManagedStatus]);
 
   /** POST /api/examiner action:'chat' with the given transcript; appends the reply on success. */
   const runChat = useCallback(
@@ -468,9 +567,9 @@ export default function Home() {
           throw new Error(SESSION_EXPIRED_ERROR);
         }
         if (!res.ok) throw new Error(errorFrom(data, `Request failed (${res.status})`));
-        // A keyless-managed call just settled real spend against this month's
-        // allowance — re-sync the sidebar meter (best-effort; runs even if the
-        // reply is discarded below, because the money moved regardless).
+        // A keyless-managed call just settled real spend server-side — re-sync
+        // the sidebar session state (best-effort; runs even if the reply is
+        // discarded below, because the credit was consumed regardless).
         if (!key && managedCovers) void refreshManagedStatus();
         // Discard replies that resolve after the user switched case — appending
         // them would put case A's examiner turn into case B's transcript.
@@ -551,7 +650,7 @@ export default function Home() {
         throw new Error(SESSION_EXPIRED_ERROR);
       }
       if (!res.ok) throw new Error(errorFrom(data, `Request failed (${res.status})`));
-      // See runChat: keyless-managed spend settled — keep the meter live.
+      // See runChat: keyless-managed spend settled — keep the sidebar state live.
       if (!key && managedCovers) void refreshManagedStatus();
       const marked = data as ExaminerMarkResponse;
       setMarksheet(marked.marksheet);
@@ -611,15 +710,19 @@ export default function Home() {
           <h1 className="text-base font-semibold tracking-tight">PACES Buddy</h1>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             {managedActive
-              ? 'AI examiner · signed in'
+              ? 'AI practice partner · signed in'
               : cliBridgeCovers && !apiKey.trim()
-                ? 'AI examiner · dev bridge (subscription quota)'
-                : 'AI examiner for MRCP PACES'}
+                ? 'AI practice partner · dev bridge (subscription quota)'
+                : 'AI practice partner for MRCP PACES'}
           </p>
         </div>
         {/* The Account panel sits above Settings: a signed-in user's first task
             is signing in, not pasting an API key. */}
-        <AccountPanel status={managedStatus} onRefresh={refreshManagedStatus} />
+        <AccountPanel
+          status={managedStatus}
+          onRefresh={refreshManagedStatus}
+          onSignOut={() => void handleSignOut()}
+        />
         <Settings
           claudeKey={claudeKey}
           model={model}
@@ -631,7 +734,7 @@ export default function Home() {
         />
         <HistoryList
           records={history}
-          disabled={pending !== null || caseLoading || !restoreDone}
+          disabled={pending !== null || caseLoading || !restoreDone || !historyReady}
           onOpen={(rec) => void openArchived(rec)}
           onDelete={(id) => void deleteFromHistory(id)}
         />

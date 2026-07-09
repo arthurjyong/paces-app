@@ -80,8 +80,8 @@ export default function ChatPane({
           {caseLoading
             ? 'Loading case…'
             : hasKey
-              ? 'Pick a case from the sidebar to start a practice encounter with the AI examiner.'
-              : `Pick a case from the sidebar to start a practice encounter with the AI examiner. ${keyNotice}`}
+              ? 'Pick a case from the sidebar to start a practice encounter with your AI practice partner.'
+              : `Pick a case from the sidebar to start a practice encounter with your AI practice partner. ${keyNotice}`}
         </p>
         {error && !caseLoading && (
           <p className="max-w-md rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">

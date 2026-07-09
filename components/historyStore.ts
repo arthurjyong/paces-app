@@ -57,6 +57,20 @@ function hasRenderableMeta(x: unknown): x is { meta: PublicCaseMeta } {
 }
 
 /**
+ * Rebuild one archived record from untrusted data (IndexedDB row OR a record
+ * pulled from the server's history sync), or null if unusable. Same discipline
+ * as the autosave blob: a foreign/malformed write reads as "skip".
+ */
+export function sanitizeArchivedRecord(raw: unknown): ArchivedEncounter | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as ArchivedEncounter;
+  if (typeof r.id !== 'string' || typeof r.archivedAt !== 'string' || !hasRenderableMeta(r)) return null;
+  const payload = sanitizeEncounterPayload(r);
+  if (!payload) return null;
+  return { id: r.id, archivedAt: r.archivedAt, meta: r.meta, ...payload };
+}
+
+/**
  * All archived encounters, newest first. Records failing validation (foreign
  * writes, schema drift) are silently skipped — never rendered, never reopened.
  */
@@ -64,12 +78,8 @@ export async function listArchived(): Promise<ArchivedEncounter[]> {
   const all = await withStore('readonly', (s) => s.getAll() as IDBRequest<unknown[]>);
   const valid: ArchivedEncounter[] = [];
   for (const raw of all) {
-    if (!raw || typeof raw !== 'object') continue;
-    const r = raw as ArchivedEncounter;
-    if (typeof r.id !== 'string' || typeof r.archivedAt !== 'string' || !hasRenderableMeta(r)) continue;
-    const payload = sanitizeEncounterPayload(r);
-    if (!payload) continue;
-    valid.push({ id: r.id, archivedAt: r.archivedAt, meta: r.meta, ...payload });
+    const rec = sanitizeArchivedRecord(raw);
+    if (rec) valid.push(rec);
   }
   return valid.sort((a, b) => (a.archivedAt < b.archivedAt ? 1 : -1));
 }
@@ -89,4 +99,25 @@ export async function archiveEncounter(record: ArchivedEncounter): Promise<void>
 
 export async function deleteArchived(id: string): Promise<void> {
   await withStore('readwrite', (s) => s.delete(id));
+}
+
+/** Merge validated records (e.g. pulled from server sync) into the store, then prune. */
+export async function putArchivedRecords(records: ArchivedEncounter[]): Promise<void> {
+  for (const rec of records) {
+    const clean = sanitizeArchivedRecord(rec);
+    if (clean) await withStore('readwrite', (s) => s.put(clean));
+  }
+  try {
+    const all = await listArchived();
+    for (const r of all.slice(MAX_RECORDS)) {
+      await withStore('readwrite', (s) => s.delete(r.id));
+    }
+  } catch {
+    // pruning is hygiene, not correctness
+  }
+}
+
+/** Wipe the local History store — used on explicit sign-out so a shared device doesn't mix users. */
+export async function clearAllArchived(): Promise<void> {
+  await withStore('readwrite', (s) => s.clear() as unknown as IDBRequest<undefined>);
 }

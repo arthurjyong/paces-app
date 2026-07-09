@@ -112,6 +112,18 @@ export function emailDomain(email: string): string {
   return email.slice(email.lastIndexOf('@') + 1);
 }
 
+/**
+ * A stable, OPAQUE per-user token derived from the user id — surfaced in
+ * ManagedStatus so the client can detect an identity change (and wipe the
+ * local History store on a shared device) without exposing the raw users.id.
+ * HMAC'd with AUTH_SECRET; non-colliding across users, reveals nothing.
+ */
+export function opaqueUserId(sub: string): string {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) return '';
+  return crypto.createHmac('sha256', secret).update(`history-owner:${sub}`).digest('base64url').slice(0, 22);
+}
+
 // ---------------------------------------------------------------------------
 // Signed session tokens (HMAC machinery ported verbatim from lib/demo.ts;
 // the payload gains `sub` — the users.id — and a new disjoint purpose, so no
@@ -421,12 +433,6 @@ export async function verifyOtp(email: string, code: string): Promise<OtpVerifyR
 // Status + metering
 // ---------------------------------------------------------------------------
 
-interface BalanceRow {
-  allowance_usd: string;
-  reserved_usd: string;
-  spent_usd: string;
-}
-
 /**
  * Make sure this month's meter row exists and reflects the CURRENT allowance
  * (tier/override edits apply mid-month; spent/reserved are never touched).
@@ -439,7 +445,11 @@ async function ensureBalance(userId: string, period: string, allowanceUsd: numbe
   );
 }
 
-/** The client's whole view of the managed session (GET /api/auth/status). */
+/**
+ * The client's whole view of the managed session (GET /api/auth/status). We
+ * ensure this month's balance row exists (the meter needs it), but the spend
+ * numbers are NOT returned — users aren't shown their credit (owner decision).
+ */
 export async function getManagedStatus(): Promise<ManagedStatus> {
   if (!managedEnabled()) return { active: false };
   const session = await readManagedSession();
@@ -447,22 +457,13 @@ export async function getManagedStatus(): Promise<ManagedStatus> {
   const grant = await resolveTier(session.email);
   if (!grant) return { active: false };
 
-  const period = sgtMonth();
-  await ensureBalance(session.sub, period, grant.allowanceUsd);
-  const balance = await query<BalanceRow>(
-    'SELECT allowance_usd, reserved_usd, spent_usd FROM user_balances WHERE user_id = $1 AND period = $2',
-    [session.sub, period]
-  );
-  const row = balance.rows[0];
+  await ensureBalance(session.sub, sgtMonth(), grant.allowanceUsd);
   return {
     active: true,
+    id: opaqueUserId(session.sub),
     email: maskEmail(session.email),
     tier: grant.tier,
     models: [...TIER_MODELS[grant.tier]],
-    allowanceUsd: Number(row?.allowance_usd ?? grant.allowanceUsd),
-    spentUsd: Number(row?.spent_usd ?? 0),
-    reservedUsd: Number(row?.reserved_usd ?? 0),
-    period,
   };
 }
 

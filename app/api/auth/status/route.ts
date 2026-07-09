@@ -1,9 +1,10 @@
 // GET /api/auth/status — the client's whole view of the managed session.
 //
 // Returns ManagedStatus (lib/tiers.ts): {active:false} when signed out, else
-// the MASKED email, tier, tier-filtered model ids, and this calendar month's
-// meter. The cookie value, the full email address, and the server-held
-// gateway key never appear in the payload. Authorization is re-derived from
+// an opaque per-user id, the MASKED email, tier, and tier-filtered model ids —
+// NO spend numbers (users are never shown their credit). The cookie value, the
+// full email address, and the server-held gateway key never appear in the
+// payload. Authorization is re-derived from
 // the database inside getManagedStatus, so a domain or override removed
 // after sign-in reads as {active:false} immediately — outstanding cookies
 // included. ANY failure (a DB blip, an unconfigured door) also returns

@@ -200,17 +200,17 @@ export interface ModelInfo {
 
 /**
  * The offered models (Phase 1, picker simplified 2026-07-09 per Arthur).
- * - gateway — the MANAGED door's free models (server key, login-gated,
- *   per-user metered; which a signed-in user may run is tier-gated
- *   server-side). Slugs + list prices verified live on the gateway models API
- *   2026-07-09 (Sonnet 4.6 $3/$15 per M, DeepSeek V4 Pro $0.435/$0.87 per M).
- *   These are NOT selectable BYOK options — reached only by signing in.
+ * - gateway — the MANAGED door's free model (server key, login-gated, per-user
+ *   metered). The free tier is UNIFORM (DeepSeek V4 Pro only; see TIER_MODELS
+ *   in lib/tiers.ts) and its model name is never shown to the user. NOT a
+ *   selectable BYOK option — reached only by signing in. Gateway Sonnet was
+ *   removed 2026-07-09 (no tier runs it — re-add here + in TIER_MODELS to
+ *   re-differentiate a tier later; its price row stays in lib/pricing.ts).
  * - anthropic — the BYOK door: the user's own Claude key. Sonnet 4.6 is the
  *   default; Opus 4.8 and Haiku 4.5 are the options. (OpenRouter and a
  *   BYOK gateway key were dropped 2026-07-09 — BYOK users bring Claude.)
  */
 export const MODELS: readonly ModelInfo[] = [
-  { id: 'anthropic/claude-sonnet-4.6', provider: 'gateway', label: 'Claude Sonnet 4.6' },
   { id: 'deepseek/deepseek-v4-pro', provider: 'gateway', label: 'DeepSeek V4 Pro' },
   { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6' },
   { id: 'claude-opus-4-8', provider: 'anthropic', label: 'Claude Opus 4.8' },

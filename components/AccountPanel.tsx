@@ -5,8 +5,8 @@
 // code typed IN-APP — deliberately not a clickable link, because institutional
 // mail gateways rewrite or strip links (plan §3). The session lives in an
 // httpOnly cookie, so this component only ever sees the ManagedStatus
-// projection from GET /api/auth/status (masked email, tier, covered models,
-// this month's meter) — never the cookie value, the full address, or any key.
+// projection from GET /api/auth/status (masked email, tier, covered models) —
+// never the cookie value, the full address, the spend numbers, or any key.
 // Collapsible, styled to match Settings.
 
 import { useState } from 'react';
@@ -16,8 +16,10 @@ import type { ManagedStatus } from '@/lib/tiers';
 interface AccountPanelProps {
   /** null while GET /api/auth/status is still loading. */
   status: ManagedStatus | null;
-  /** Re-fetch /api/auth/status (called after verify and sign-out). */
+  /** Re-fetch /api/auth/status (called after a successful verify). */
   onRefresh: () => void;
+  /** Called after an explicit sign-out — the parent clears local History and re-fetches status. */
+  onSignOut: () => void;
 }
 
 async function readJson(res: Response): Promise<unknown> {
@@ -35,7 +37,7 @@ function errorFrom(data: unknown, fallback: string): string {
   return fallback;
 }
 
-export default function AccountPanel({ status, onRefresh }: AccountPanelProps) {
+export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPanelProps) {
   const [open, setOpen] = useState(true);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -123,23 +125,9 @@ export default function AccountPanel({ status, onRefresh }: AccountPanelProps) {
       // best-effort — the status refresh below shows the truth either way
     } finally {
       setBusy(null);
-      onRefresh();
+      onSignOut();
     }
   }
-
-  // Signed-in meter numbers. The bar shows committed + in-flight spend
-  // (reserved releases or converts to spent when the call settles); capped at
-  // 100% because a settle may overshoot its reserve by design, and guarded
-  // against a zero allowance (an owner override could set one).
-  const spent = status?.spentUsd ?? 0;
-  const reserved = status?.reservedUsd ?? 0;
-  const allowance = status?.allowanceUsd ?? 0;
-  const usedFraction =
-    allowance > 0 ? Math.min((spent + reserved) / allowance, 1) : spent + reserved > 0 ? 1 : 0;
-  const tierLine =
-    status?.tier === 'institutional'
-      ? 'Free: Claude Sonnet 4.6 + DeepSeek V4 Pro'
-      : 'Free: DeepSeek V4 Pro';
 
   return (
     <section className="border-b border-zinc-200 dark:border-zinc-800">
@@ -168,22 +156,8 @@ export default function AccountPanel({ status, onRefresh }: AccountPanelProps) {
                 <p className="text-sm font-medium text-teal-800 dark:text-teal-200">
                   Signed in as {status.email}
                 </p>
-                <p className="mt-0.5 text-xs text-teal-700/80 dark:text-teal-300/80">{tierLine}</p>
-                <div
-                  className="mt-2 h-1.5 overflow-hidden rounded-full bg-teal-200/70 dark:bg-teal-900/70"
-                  role="progressbar"
-                  aria-label="Monthly managed allowance used"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={Math.round(usedFraction * 100)}
-                >
-                  <div
-                    className="h-full rounded-full bg-teal-600 dark:bg-teal-400"
-                    style={{ width: `${(usedFraction * 100).toFixed(1)}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-teal-700/80 dark:text-teal-300/80">
-                  US${spent.toFixed(2)} of US${allowance.toFixed(2)} used this month
+                <p className="mt-0.5 text-xs text-teal-700/80 dark:text-teal-300/80">
+                  Free practice — no API key needed. Your study history syncs to this account.
                 </p>
               </div>
               <button
@@ -205,9 +179,10 @@ export default function AccountPanel({ status, onRefresh }: AccountPanelProps) {
               }}
             >
               <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                Sign in with your email for free practice with DeepSeek V4 Pro. An MOHH or hospital
-                email also gets free practice with Claude Sonnet 4.6. Using your own Claude API key
-                is always free.
+                Sign in with your email for free practice — no API key needed, and your study
+                history syncs across devices. Open to common email providers (Gmail, Outlook, and
+                similar) and Singapore public-healthcare emails. Or use your own Claude API key,
+                always free.
               </p>
               <input
                 type="email"

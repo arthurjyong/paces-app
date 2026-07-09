@@ -1,6 +1,6 @@
-# PACES Buddy — AI examiner
+# PACES Buddy — AI practice partner
 
-A shareable, BYOK (bring-your-own-key) web app for practising MRCP PACES with an AI examiner. Pick one of 503 practice encounters (past-year carousel recalls plus standalone case banks); the AI plays examiner (and simulated patient/relative for communication and consultation stations), reveals findings only as you examine, runs the viva, then marks you against the official PACES rubric with a structured per-skill marksheet.
+A shareable, BYOK (bring-your-own-key) web app for practising MRCP PACES with an AI practice partner that plays examiner during each case. Pick one of 503 practice encounters (past-year carousel recalls plus standalone case banks); the AI plays examiner (and simulated patient/relative for communication and consultation stations), reveals findings only as you examine, runs the viva, then marks you against the official PACES rubric with a structured per-skill marksheet.
 
 Built on Next.js (App Router) + the Anthropic Messages API. Models are served through one multi-provider adapter: the managed door routes server-side through **Vercel AI Gateway** (one operator top-up, zero markup), while BYOK users bring their own **Anthropic (Claude)** key (the same adapter can also speak directly to DeepSeek / Moonshot / MiniMax endpoints for off-Vercel use, though those aren't surfaced in the UI). The candidate's browser only ever sees the case stem and the examiner's replies — expected findings, model answers, and the answer key stay server-side.
 
@@ -11,7 +11,7 @@ Built on Next.js (App Router) + the Anthropic Messages API. Models are served th
 - **Clinical-image reveal** — for cases where a sign is something you *see*, the examiner surfaces a real photo in-chat once you examine that region (same discipline as text findings; never on the stem).
 - **Crash-safe transcripts** — the live encounter (case, transcript, revealed photos, marksheet) autosaves to the browser and restores on reload, so an accidental refresh never wipes your work. Fully client-side; the backend stores no transcripts.
 - **History** — finished or parked encounters are archived in the browser (IndexedDB); reopen one read-only or continue an unmarked case where you left off.
-- **Five models, two doors** — the managed door offers Claude Sonnet 4.6 (premium, ~$0.30/case) and DeepSeek V4 Pro (budget, ~$0.02–0.05/case — thinking is always-on on the gateway, billed as output), both via **Vercel AI Gateway** (one operator key, one top-up, zero markup, server-side only). BYOK adds the direct Claude lineup (Sonnet 4.6 / Opus 4.8 / Haiku 4.5 on your own Anthropic key) — BYOK is Claude-only.
+- **Two doors** — the managed door is a single **free practice** option (routed server-side through **Vercel AI Gateway** — one operator key, one top-up, zero markup; the model is never named to the user). BYOK adds the direct Claude lineup (Sonnet 4.6 / Opus 4.8 / Haiku 4.5 on your own Anthropic key) — BYOK is Claude-only.
 - **Two access doors** — bring your own API key (kept only in your browser, one saved slot per provider, no account needed), or sign in with your email + a 6-digit code and practise on the app's own metered allowance (see *Managed access* below).
 
 All study state — transcripts, history, keys — lives in the candidate's own browser; the server never stores a transcript. A managed sign-in adds only a minimal server-side account: email, tier, and a monthly usage meter.
@@ -37,12 +37,12 @@ Two doors, different rules:
 
 Your tier is decided by your email domain:
 
-| Tier | Who qualifies | Models | Allowance |
+| Tier | Who qualifies | Free practice | Allowance |
 |---|---|---|---|
-| **Public** | Major consumer email providers (gmail.com, outlook.com, yahoo.com, icloud.com, …) | DeepSeek V4 Pro | US$1 / month (~40–50 cases) |
-| **Institutional** | Approved SG-healthcare domains (mohh.com.sg, singhealth.com.sg, nuhs.edu.sg, nhg.com.sg, …) | Claude Sonnet 4.6 + DeepSeek V4 Pro | US$2 / month |
+| **Public** | Major consumer email providers (gmail.com, outlook.com, yahoo.com, icloud.com, …) | Free practice | US$1 / month |
+| **Institutional** | Approved SG-healthcare domains (mohh.com.sg, singhealth.com.sg, nuhs.edu.sg, nhg.com.sg, and major hospitals incl. NTFGH, AH, …) | Free practice | US$1 / month |
 
-Any other domain (unknown, disposable, personal) can't use the managed door — BYOK still works for everyone. Allowances are per-user USD spend caps per **calendar month, Singapore time**, metered against the app's own ledger; per-address exceptions (a different tier, or a custom allowance) go in `email_overrides`.
+Both tiers are the same today — free practice on the app's allowance, US$1 / month; the two names only decide which emails may register (consumer vs SG-healthcare domains) and are kept for possible future differentiation. Any other domain (unknown, disposable, personal) can't use the managed door — BYOK still works for everyone. Allowances are per-user USD spend caps per **calendar month, Singapore time**, metered against the app's own ledger; per-address exceptions (a different tier, or a custom allowance) go in `email_overrides`.
 
 **Sign-in is a 6-digit emailed code, not a link, on purpose:** institutional mail security gateways (Mimecast/Proofpoint-style) rewrite or strip links, which silently breaks link-based sign-in for exactly the users the institutional tier serves. A code is plain body text and survives. Codes are single-use, valid for 10 minutes, and limited to 5 attempts; a session lasts 30 days per browser.
 

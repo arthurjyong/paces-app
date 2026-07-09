@@ -71,13 +71,13 @@ interface ProviderServerConfig {
 export const PROVIDER_CONFIG: Record<ProviderId, ProviderServerConfig> = {
   // Vercel AI Gateway — the managed "one key, one top-up, zero markup" path
   // (Phase 0, 2026-07-09). Anthropic-Messages surface at ai-gateway.vercel.sh
-  // (SDK appends /v1/messages; live 401 on a bad key confirmed). It fronts BOTH
-  // offered models: anthropic/claude-sonnet-4.6 and deepseek/deepseek-v4-pro.
-  // - forcedToolChoice: both underlying models honour it (Claude + DeepSeek).
+  // (SDK appends /v1/messages; live 401 on a bad key confirmed). The only
+  // gateway model surfaced now is deepseek/deepseek-v4-pro (the uniform free
+  // model); gateway Sonnet was dropped 2026-07-09 (see MODELS in lib/types.ts).
+  // - forcedToolChoice: DeepSeek honours it (also Claude, if gateway Sonnet returns).
   // - systemAsString false: keep the two cache_control blocks — the gateway is
-  //   Anthropic-shaped and passes caching through to Sonnet (where $3/M input
-  //   makes it real money); it translates/ignores for DeepSeek.
-  // - revealReminder true: harmless for Sonnet, guards DeepSeek's weaker IF.
+  //   Anthropic-shaped and passes caching through (translates/ignores for DeepSeek).
+  // - revealReminder true: guards DeepSeek's weaker instruction-following.
   gateway: {
     baseURL: 'https://ai-gateway.vercel.sh',
     auth: 'x-api-key',
