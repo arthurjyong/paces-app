@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { ApiError, PublicCase } from '@/lib/types';
-import { ContentError, getCaseMeta, getCaseStem, toPublicMeta } from '@/lib/content';
+import { getCaseMeta, getCaseStem, toPublicMeta } from '@/lib/content';
 
 export const runtime = 'nodejs';
 
@@ -26,9 +26,10 @@ export async function GET(
     const body: PublicCase = { meta: toPublicMeta(meta), stem: getCaseStem(id) };
     return NextResponse.json(body, { headers: CACHE_HEADERS });
   } catch (err) {
-    const body: ApiError = {
-      error: err instanceof ContentError ? err.message : 'Internal server error',
-    };
+    // Never forward the raw error — ContentError messages name internal file
+    // paths / build scripts (info disclosure to anonymous clients).
+    console.error('[case] content error:', err instanceof Error ? err.message : 'unknown error');
+    const body: ApiError = { error: 'Case content is temporarily unavailable' };
     return NextResponse.json(body, { status: 500, headers: CACHE_HEADERS });
   }
 }

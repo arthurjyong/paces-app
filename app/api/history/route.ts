@@ -18,9 +18,12 @@ import {
 
 export const runtime = 'nodejs';
 
+// Per-user, cookie-derived — never cacheable by a shared/CDN cache.
+const CACHE_HEADERS = { 'Cache-Control': 'private, no-store' } as const;
+
 function jsonError(message: string, status: number) {
   const body: ApiError = { error: message };
-  return NextResponse.json(body, { status });
+  return NextResponse.json(body, { status, headers: CACHE_HEADERS });
 }
 
 export async function GET() {
@@ -28,12 +31,12 @@ export async function GET() {
     const session = await readManagedSession();
     if (!session) return jsonError('Not signed in', 401);
     const snapshot: HistorySnapshot = await listUserHistory(session.sub);
-    return NextResponse.json(snapshot);
+    return NextResponse.json(snapshot, { headers: CACHE_HEADERS });
   } catch {
     // History sync is best-effort — a DB blip must not surface as an error the
     // user sees (their local history keeps working). Empty snapshot = no-op merge.
     const empty: HistorySnapshot = { records: [], deletedIds: [] };
-    return NextResponse.json(empty);
+    return NextResponse.json(empty, { headers: CACHE_HEADERS });
   }
 }
 
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
     if (!record) return jsonError('Invalid history record', 400);
 
     await upsertRecord(session.sub, record);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true }, { headers: CACHE_HEADERS });
   } catch {
     return jsonError('Could not save history — try again', 503);
   }

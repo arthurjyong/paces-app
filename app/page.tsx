@@ -256,10 +256,24 @@ export default function Home() {
     }
     // Identity changed — the local store belongs to a different user (or to a
     // prior session). Hide + wipe it BEFORE showing or syncing anything.
+    const priorWasSignedIn = recorded !== 'anon';
     writeHistoryOwner(currentOwner);
     historySyncedRef.current = false;
     setHistory([]); // drop the prior owner's rows from view immediately
     setHistoryReady(false); // disable History interaction during the wipe
+    if (priorWasSignedIn) {
+      // A signed-in user is being REPLACED (expiry, or a silent account switch
+      // where B signs in without A signing out). Tear down A's LIVE in-progress
+      // encounter too — otherwise B could archive it and push A's transcript
+      // into B's server history (security audit 2026-07-09, the high finding).
+      // Not done on anon→sign-in: that's the same person keeping their own work.
+      clearSavedEncounter();
+      setPublicCase(null);
+      setEntries([]);
+      setMarksheet(null);
+      setMarkUsage(null);
+      setError(null);
+    }
     void (async () => {
       try {
         await clearAllArchived();
@@ -513,15 +527,22 @@ export default function Home() {
   );
 
   /**
-   * Explicit sign-out: wipe the LOCAL History store so a shared device never
-   * shows the next signed-in user the previous user's records. The records are
-   * safe on the server (synced), and re-pulled on the owner's next sign-in.
-   * (Session EXPIRY does not clear — that's transient, same user.)
+   * Explicit sign-out: wipe the LOCAL History store AND tear down the live
+   * in-progress encounter, so a shared device never shows the next signed-in
+   * user the previous user's records OR lets their live transcript be archived
+   * into the next account (security audit 2026-07-09). Server-side history is
+   * safe (synced) and re-pulled on the owner's next sign-in.
    */
   const handleSignOut = useCallback(async () => {
     historySyncedRef.current = false;
     writeHistoryOwner('anon'); // the store is now unowned; the effect won't re-wipe
     setHistory([]);
+    clearSavedEncounter();
+    setPublicCase(null);
+    setEntries([]);
+    setMarksheet(null);
+    setMarkUsage(null);
+    setError(null);
     try {
       await clearAllArchived();
     } catch {

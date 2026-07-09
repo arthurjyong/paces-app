@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { ApiError, PublicManifest } from '@/lib/types';
-import { ContentError, getPublicManifest } from '@/lib/content';
+import { getPublicManifest } from '@/lib/content';
 
 export const runtime = 'nodejs';
 
@@ -15,9 +15,9 @@ export async function GET() {
     const manifest: PublicManifest = getPublicManifest();
     return NextResponse.json(manifest, { headers: CACHE_HEADERS });
   } catch (err) {
-    const body: ApiError = {
-      error: err instanceof ContentError ? err.message : 'Internal server error',
-    };
+    // Never forward the raw error — ContentError messages name internal paths.
+    console.error('[manifest] content error:', err instanceof Error ? err.message : 'unknown error');
+    const body: ApiError = { error: 'Case list is temporarily unavailable' };
     return NextResponse.json(body, { status: 500, headers: CACHE_HEADERS });
   }
 }

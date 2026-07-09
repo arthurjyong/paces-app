@@ -55,29 +55,48 @@ export function validateIncomingRecord(x: unknown): HistoryRecord | null {
   if (!r.meta || typeof r.meta !== 'object') return null;
   if (typeof r.stem !== 'string') return null;
   if (!Array.isArray(r.entries)) return null;
+  // Normalize to the allow-listed TOP-LEVEL shape — drop any extra keys the
+  // client sent (no arbitrary JSON stored verbatim; the client also
+  // re-sanitizes deeply on read). Cap `entries` length as a coarse guard.
+  const normalized: HistoryRecord = {
+    id: r.id,
+    archivedAt: r.archivedAt as string,
+    meta: r.meta,
+    stem: r.stem,
+    entries: (r.entries as unknown[]).slice(0, 500),
+    marksheet: r.marksheet ?? null,
+    markUsage: r.markUsage ?? null,
+  };
   let serialized: string;
   try {
-    serialized = JSON.stringify(r);
+    serialized = JSON.stringify(normalized);
   } catch {
     return null;
   }
   if (serialized.length > MAX_RECORD_BYTES) return null;
-  return r as HistoryRecord;
+  return normalized;
 }
 
-/** The user's server-side history: non-deleted records (newest first) + tombstoned ids. */
+/**
+ * The user's server-side history: non-deleted records (newest first) + tombstoned
+ * ids. Two SEPARATE bounded queries so a burst of deletes (tombstones) can never
+ * crowd genuine live records out of the 200-record pull window.
+ */
 export async function listUserHistory(userId: string): Promise<HistorySnapshot> {
-  const res = await query<{ payload: HistoryRecord; client_id: string; deleted: boolean }>(
-    `SELECT client_id, payload, deleted FROM study_history
-     WHERE user_id = $1 ORDER BY archived_at DESC LIMIT $2`,
+  const live = await query<{ payload: HistoryRecord }>(
+    `SELECT payload FROM study_history
+     WHERE user_id = $1 AND deleted = false ORDER BY archived_at DESC LIMIT $2`,
     [userId, MAX_RECORDS]
   );
-  const records: HistoryRecord[] = [];
-  const deletedIds: string[] = [];
-  for (const row of res.rows) {
-    if (row.deleted) deletedIds.push(row.client_id);
-    else if (row.payload && typeof row.payload === 'object') records.push(row.payload);
-  }
+  const tombstones = await query<{ client_id: string }>(
+    `SELECT client_id FROM study_history
+     WHERE user_id = $1 AND deleted = true ORDER BY archived_at DESC LIMIT 1000`,
+    [userId]
+  );
+  const records = live.rows
+    .map((r) => r.payload)
+    .filter((p): p is HistoryRecord => Boolean(p) && typeof p === 'object');
+  const deletedIds = tombstones.rows.map((r) => r.client_id);
   return { records, deletedIds };
 }
 

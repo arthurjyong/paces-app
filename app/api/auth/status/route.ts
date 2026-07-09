@@ -17,13 +17,16 @@ import { getManagedStatus } from '@/lib/managed';
 
 export const runtime = 'nodejs';
 
+// Per-user, cookie-derived — must never be stored by a shared/CDN cache.
+const CACHE_HEADERS = { 'Cache-Control': 'private, no-store' } as const;
+
 export async function GET() {
   try {
-    return NextResponse.json(await getManagedStatus());
+    return NextResponse.json(await getManagedStatus(), { headers: CACHE_HEADERS });
   } catch (err) {
     // Log the cause server-side; the client just sees "signed out".
     console.error('[auth] status failed:', err instanceof Error ? err.message : 'unknown error');
     const body: ManagedStatus = { active: false };
-    return NextResponse.json(body);
+    return NextResponse.json(body, { headers: CACHE_HEADERS });
   }
 }

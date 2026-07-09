@@ -258,9 +258,31 @@ function ipRateOk(ip: string): boolean {
   return true;
 }
 
-/** Best-effort client IP for rate limiting (first x-forwarded-for hop). */
+/**
+ * Client IP for the best-effort per-IP brake. On Vercel, `x-vercel-forwarded-for`
+ * / `x-real-ip` are injected by the trusted edge and cannot be spoofed; the
+ * LEFTMOST `x-forwarded-for` hop is client-controlled. Prefer the trusted
+ * sources; fall back to the LAST xff hop (Vercel appends the real IP), never the
+ * first (security audit 2026-07-09). The durable per-email + global caps are the
+ * real bounds; this remains a soft brake.
+ */
 export function requestIp(request: Request): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local';
+  const vercel = request.headers.get('x-vercel-forwarded-for')?.trim();
+  if (vercel) return vercel.split(',')[0].trim() || 'local';
+  const real = request.headers.get('x-real-ip')?.trim();
+  if (real) return real;
+  const xff = request.headers.get('x-forwarded-for');
+  if (xff) {
+    const hops = xff.split(',').map((h) => h.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1]; // last = Vercel-appended, unforgeable
+  }
+  return 'local';
+}
+
+/** Global daily ceiling on OTP emails (runaway/mail-bomb backstop; protects the Resend quota). */
+function otpGlobalDailyCap(): number {
+  const raw = Number(process.env.OTP_GLOBAL_DAILY_CAP ?? '300');
+  return Number.isFinite(raw) && raw > 0 ? raw : 300;
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +402,19 @@ export async function requestOtp(email: string, ip: string): Promise<OtpRequestR
   // then INSERT races across serverless instances). pg_advisory_xact_lock
   // releases at commit/rollback and works under pgbouncer transaction pooling.
   const issued = await withTransaction(async (client) => {
+    // A GLOBAL issuance lock (fixed key) serializes all OTP sends so both the
+    // per-email and the global-daily caps are exact, then the per-email lock.
+    // Acquired global-then-email consistently (no deadlock). OTP sends are rare,
+    // so the contention is negligible.
+    await client.query('SELECT pg_advisory_xact_lock(918273645)');
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [email]);
+    // Global daily backstop — a mail-bomb across many addresses can't drain the
+    // Resend quota. Prune very old rows opportunistically (hygiene).
+    await client.query("DELETE FROM otp_codes WHERE created_at < now() - interval '2 days'");
+    const global = await client.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM otp_codes WHERE created_at > now() - interval '1 day'"
+    );
+    if ((global.rows[0]?.n ?? 0) >= otpGlobalDailyCap()) return false;
     const sent = await client.query<{ n: number }>(
       `SELECT count(*)::int AS n FROM otp_codes
        WHERE email = $1 AND created_at > now() - interval '1 hour'`,
