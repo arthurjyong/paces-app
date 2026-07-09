@@ -311,8 +311,12 @@ async function sendOtpEmail(email: string, code: string): Promise<void> {
       greetingTimeout: 5_000,
       socketTimeout: 8_000,
     });
+    // The visible From address: MAIL_FROM when set (e.g. noreply@pacesbuddy.com
+    // with a transactional sender like Resend, where SMTP_USER is a literal
+    // like "resend" and can't be the From), else the SMTP username (Gmail).
+    const fromAddress = process.env.MAIL_FROM?.trim() || user;
     await transporter.sendMail({
-      from: `"PACES Buddy" <${user}>`,
+      from: `"PACES Buddy" <${fromAddress}>`,
       to: email,
       subject: `${code} is your PACES Buddy sign-in code`,
       text: `Hello,\n\nYour PACES Buddy sign-in code is:\n\n    ${code}\n\nType it into the app within 10 minutes. If you did not request this email, just ignore it — nobody can sign in without the code.\n`,
