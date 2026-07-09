@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
@@ -20,6 +20,15 @@ export const metadata: Metadata = {
   // clinical images — keep it out of search indexes until images are swapped to
   // open-licensed sources. Remove once the app is intended to be discoverable.
   robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // iOS Safari auto-zooms the page when a focused input's font-size is below
+  // 16px; capping the scale suppresses that focus zoom. iOS still honours
+  // manual pinch-zoom regardless of this cap (accessibility override).
+  maximumScale: 1,
 };
 
 export default function RootLayout({

@@ -69,7 +69,7 @@ export default function Settings({
               id="model"
               value={model}
               onChange={(e) => onModelChange(e.target.value)}
-              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950"
+              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-base outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 md:text-sm dark:border-zinc-700 dark:bg-zinc-950"
             >
               {signedIn && freeModels.length > 0 && (
                 // Free practice runs on a fixed model server-side; we never
@@ -102,7 +102,7 @@ export default function Settings({
                 value={claudeKey}
                 onChange={(e) => onClaudeKeyChange(e.target.value)}
                 placeholder={claude.keyPlaceholder}
-                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950"
+                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-base outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 md:text-sm dark:border-zinc-700 dark:bg-zinc-950"
               />
               <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
                 Stored only in this browser, sent per-request, never saved on our server. You pay

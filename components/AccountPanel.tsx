@@ -191,7 +191,7 @@ export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPa
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
                 aria-label="Email address for managed access"
-                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950"
+                className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-base outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 md:text-sm dark:border-zinc-700 dark:bg-zinc-950"
               />
               {sentMessage ? (
                 <>
@@ -206,7 +206,7 @@ export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPa
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                     placeholder="6-digit code"
                     aria-label="6-digit sign-in code"
-                    className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm tracking-widest outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 dark:border-zinc-700 dark:bg-zinc-950"
+                    className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-base tracking-widest outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 md:text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   />
                   <button
                     type="submit"

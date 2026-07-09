@@ -266,7 +266,7 @@ export default function ChatPane({
               }}
               disabled={pending !== null}
               placeholder="Describe what you examine, ask, or say… (Enter to send, Shift+Enter for a new line)"
-              className="max-h-40 min-h-[2.5rem] flex-1 resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950"
+              className="max-h-40 min-h-[2.5rem] flex-1 resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-base leading-6 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:opacity-60 md:text-sm dark:border-zinc-700 dark:bg-zinc-950"
             />
             <button
               type="button"
