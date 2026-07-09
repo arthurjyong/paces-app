@@ -12,3 +12,6 @@ coverage
 npm-debug.log*
 # local dev Postgres data (scripts/dev-db.mjs) — never upload
 .dev-pg
+# Neon CLI agent-skill install artifacts
+.agents
+skills-lock.json

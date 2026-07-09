@@ -54,3 +54,7 @@ next-env.d.ts
 
 # local dev Postgres (scripts/dev-db.mjs)
 /.dev-pg
+
+# Neon CLI agent-skill install artifacts (not app code)
+.agents/
+skills-lock.json
