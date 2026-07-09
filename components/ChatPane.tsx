@@ -5,6 +5,7 @@
 // divider), loading indicator, error notice, marksheet card, and the composer.
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import type { MarkSheet, PublicCase, TokenUsage } from '@/lib/types';
 import { BEGIN_MESSAGE, RichText, usageLine, type TranscriptEntry } from './shared';
 import MarksheetCard from './MarksheetCard';
@@ -29,6 +30,8 @@ interface ChatPaneProps {
   onNewCase: () => void;
   onRetry: () => void;
   onOpenSidebar: () => void;
+  /** Opens the feedback dialog prefilled with this case's code (marksheet "report an issue"). */
+  onReportCase: () => void;
 }
 
 export default function ChatPane({
@@ -48,6 +51,7 @@ export default function ChatPane({
   onNewCase,
   onRetry,
   onOpenSidebar,
+  onReportCase,
 }: ChatPaneProps) {
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -83,6 +87,16 @@ export default function ChatPane({
               ? 'Pick a case from the sidebar to start a practice encounter with your AI practice partner.'
               : `Pick a case from the sidebar to start a practice encounter with your AI practice partner. ${keyNotice}`}
         </p>
+        {!caseLoading && (
+          <p className="max-w-md text-xs leading-5 text-zinc-400 dark:text-zinc-500">
+            Examine step by step, present your findings, take the viva, and get a marksheet.
+            Nothing replaces the bedside — this is your practice partner for the hours between
+            real patients.{' '}
+            <Link href="/about" className="underline hover:text-teal-700 dark:hover:text-teal-300">
+              About this project
+            </Link>
+          </p>
+        )}
         {error && !caseLoading && (
           <p className="max-w-md rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
             {error}
@@ -245,7 +259,21 @@ export default function ChatPane({
             </div>
           )}
 
-          {marksheet && <MarksheetCard marksheet={marksheet} usage={markUsage} />}
+          {marksheet && (
+            <>
+              <MarksheetCard marksheet={marksheet} usage={markUsage} />
+              <p className="mt-2 text-center text-xs text-zinc-400 dark:text-zinc-500">
+                Spotted an error in this case?{' '}
+                <button
+                  type="button"
+                  onClick={onReportCase}
+                  className="underline hover:text-teal-700 dark:hover:text-teal-300"
+                >
+                  Report it
+                </button>
+              </p>
+            </>
+          )}
         </div>
       </div>
 

@@ -7,6 +7,7 @@
 // /api/auth/* managed-door endpoints, per lib/types.ts + lib/tiers.ts.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   BEGIN_MESSAGE,
   clearSavedEncounter,
@@ -38,6 +39,8 @@ import Settings from '@/components/Settings';
 import AccountPanel from '@/components/AccountPanel';
 import CasePicker from '@/components/CasePicker';
 import ChatPane from '@/components/ChatPane';
+import FeedbackDialog from '@/components/FeedbackDialog';
+import Logo from '@/components/Logo';
 import HistoryList from '@/components/HistoryList';
 import {
   archiveEncounter,
@@ -146,6 +149,9 @@ export default function Home() {
 
   // Mobile sidebar drawer.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Case code carried into the feedback dialog when launched from a marksheet.
+  const [feedbackCase, setFeedbackCase] = useState<string | null>(null);
 
   // History archive (IndexedDB) — past encounters, newest first.
   const [history, setHistory] = useState<ArchivedEncounter[]>([]);
@@ -727,15 +733,24 @@ export default function Home() {
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <h1 className="text-base font-semibold tracking-tight">PACES Buddy</h1>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            {managedActive
-              ? 'AI practice partner · signed in'
-              : cliBridgeCovers && !apiKey.trim()
-                ? 'AI practice partner · dev bridge (subscription quota)'
-                : 'AI practice partner for MRCP PACES'}
-          </p>
+        <div className="flex items-center gap-2.5 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          {/* Full-page navigation on purpose — the logo doubles as the "get me
+              back to a fresh start" escape hatch (autosave preserves the run),
+              so this must NOT be a client-side <Link>. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/" aria-label="PACES Buddy — home" className="shrink-0">
+            <Logo className="h-6 w-6" />
+          </a>
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold tracking-tight">PACES Buddy</h1>
+            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+              {managedActive
+                ? 'AI practice partner · signed in'
+                : cliBridgeCovers && !apiKey.trim()
+                  ? 'AI practice partner · dev bridge (subscription quota)'
+                  : 'AI practice partner for MRCP PACES'}
+            </p>
+          </div>
         </div>
         {/* The Account panel sits above Settings: a signed-in user's first task
             is signing in, not pasting an API key. */}
@@ -765,12 +780,44 @@ export default function Home() {
           selectedId={publicCase?.meta.id ?? null}
           onSelect={(id) => void selectCase(id)}
         />
-        {/* Build stamp: the quick answer to "is my browser on the latest deploy?"
-            (stale mobile tabs kept running pre-autosave code invisibly). */}
-        <p className="border-t border-zinc-200 px-4 py-1.5 text-[10px] text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
-          build {process.env.NEXT_PUBLIC_BUILD_STAMP}
-        </p>
+        {/* Footer: everything beyond practising lives behind these links — the
+            primary interface stays minimal. Build stamp = the quick answer to
+            "is my browser on the latest deploy?". */}
+        <div className="border-t border-zinc-200 px-4 py-2 dark:border-zinc-800">
+          <p className="flex flex-wrap items-center gap-x-3 text-[11px] text-zinc-500 dark:text-zinc-400">
+            <Link href="/about" className="hover:text-teal-700 hover:underline dark:hover:text-teal-300">
+              About
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setFeedbackCase(null);
+                setFeedbackOpen(true);
+              }}
+              className="hover:text-teal-700 hover:underline dark:hover:text-teal-300"
+            >
+              Feedback
+            </button>
+            <a
+              href="https://github.com/arthurjyong/paces-app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-teal-700 hover:underline dark:hover:text-teal-300"
+            >
+              GitHub
+            </a>
+          </p>
+          <p className="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-600">
+            build {process.env.NEXT_PUBLIC_BUILD_STAMP}
+          </p>
+        </div>
       </aside>
+
+      <FeedbackDialog
+        open={feedbackOpen}
+        caseCode={feedbackCase}
+        onClose={() => setFeedbackOpen(false)}
+      />
 
       {/* Main pane */}
       <main className="flex min-w-0 flex-1 flex-col">
@@ -791,6 +838,10 @@ export default function Home() {
           onNewCase={newCase}
           onRetry={retry}
           onOpenSidebar={() => setSidebarOpen(true)}
+          onReportCase={() => {
+            setFeedbackCase(publicCase?.meta.caseCode ?? null);
+            setFeedbackOpen(true);
+          }}
         />
       </main>
     </div>

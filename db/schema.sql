@@ -126,6 +126,23 @@ CREATE TABLE IF NOT EXISTS global_spend (
   spent_usd NUMERIC(10, 6) NOT NULL DEFAULT 0
 );
 
+-- In-app feedback (sidebar "Feedback" + the marksheet's "report an issue"):
+-- bugs, ideas, case-content corrections. Anonymous by design — user_email is
+-- filled from the verified session only when the submitter happens to be
+-- signed in; reply_email is whatever they typed (contact-back address, also
+-- the durable key for the ack-per-day cap). Notifications go to
+-- FEEDBACK_TO_EMAIL (env); rows are the durable copy.
+CREATE TABLE IF NOT EXISTS feedback (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  category TEXT NOT NULL CHECK (category IN ('bug', 'idea', 'case_content', 'other')),
+  message TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 5000),
+  case_code TEXT CHECK (case_code ~ '^c[0-9]{4}$'),
+  reply_email TEXT CHECK (length(reply_email) <= 320),
+  user_email TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS feedback_created_idx ON feedback (created_at DESC);
+
 -- ---------------------------------------------------------------------------
 -- Seeds (config rows — safe to re-run; edits made later in the DB win because
 -- ON CONFLICT DO NOTHING never overwrites an existing row)
