@@ -29,7 +29,7 @@ export default function HistoryList({ records, disabled, onOpen, onDelete }: His
   if (records.length === 0) return null;
 
   return (
-    <section className="border-b border-zinc-200 dark:border-zinc-800">
+    <section className="shrink-0 border-b border-zinc-200 dark:border-zinc-800">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

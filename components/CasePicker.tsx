@@ -362,7 +362,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
     view === 'type' ? typeGroups.length === 0 : sourceTree.banks.length === 0 && sourceTree.hospitals.length === 0;
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
+    <section className="flex flex-1 flex-col">
       <div className="px-4 pb-2 pt-3">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
@@ -442,7 +442,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-4">
+      <div className="min-h-40 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-4">
         {manifestError ? (
           <p className="mx-2 mt-2 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
             {manifestError}
