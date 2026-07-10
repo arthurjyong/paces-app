@@ -39,23 +39,35 @@ export function verifySvixSignature(
   headers: { id: string | null; timestamp: string | null; signature: string | null },
   secret: string
 ): boolean {
+  // Requests without svix headers are random internet probes — fail silently.
+  // Requests WITH them that still fail are logged with non-secret diagnostics
+  // (which check failed, lengths, timestamp delta) — a misconfigured signing
+  // secret would otherwise be indistinguishable from probe noise.
   if (!headers.id || !headers.timestamp || !headers.signature) return false;
+  const fail = (reason: string): false => {
+    console.error(`[inbound] signature check failed: ${reason} (id=${headers.id}, sigLen=${headers.signature?.length})`);
+    return false;
+  };
   const ts = Number(headers.timestamp);
-  if (!Number.isFinite(ts) || Math.abs(Date.now() / 1000 - ts) > TIMESTAMP_TOLERANCE_S) return false;
+  if (!Number.isFinite(ts)) return fail('non-numeric timestamp');
+  const delta = Math.abs(Date.now() / 1000 - ts);
+  if (delta > TIMESTAMP_TOLERANCE_S) return fail(`timestamp delta ${Math.round(delta)}s`);
   let key: Buffer;
   try {
     key = Buffer.from(secret.replace(/^whsec_/, ''), 'base64');
   } catch {
-    return false;
+    return fail('secret not base64-decodable');
   }
-  if (key.length === 0) return false;
+  if (key.length === 0) return fail('empty decoded secret');
   const expected = crypto
     .createHmac('sha256', key)
     .update(`${headers.id}.${headers.timestamp}.${rawBody}`)
     .digest();
+  let sawV1 = false;
   for (const entry of headers.signature.split(' ')) {
     const [version, sig] = entry.split(',');
     if (version !== 'v1' || !sig) continue;
+    sawV1 = true;
     let candidate: Buffer;
     try {
       candidate = Buffer.from(sig, 'base64');
@@ -66,7 +78,7 @@ export function verifySvixSignature(
       return true;
     }
   }
-  return false;
+  return fail(sawV1 ? `HMAC mismatch (keyLen=${key.length}, bodyLen=${rawBody.length})` : 'no v1 entry in signature header');
 }
 
 // ---------------------------------------------------------------------------
