@@ -43,6 +43,15 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
+      {
+        // Clinical images are interim third-party material (see layout.tsx
+        // robots note): the page-level noindex meta can't cover static image
+        // responses, so refuse indexing at the header level. This must
+        // OUTLIVE the site-wide noindex — when the app is opened up for SEO,
+        // these files stay out of image search regardless.
+        source: "/case-images/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, noimageindex" }],
+      },
     ];
   },
 };
