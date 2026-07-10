@@ -10,11 +10,12 @@ Built on Next.js (App Router) + the Anthropic Messages API. Models are served th
 - **AI examiner + simulated patient** grounded on the hidden case file and per-condition reference notes: reveals findings only as you examine, runs the viva, then marks against the official PACES rubric as a structured per-skill (A–G) marksheet with justifications.
 - **Clinical-image reveal** — for cases where a sign is something you *see*, the examiner surfaces a real photo in-chat once you examine that region (same discipline as text findings; never on the stem).
 - **Crash-safe transcripts** — the live encounter (case, transcript, revealed photos, marksheet) autosaves to the browser and restores on reload, so an accidental refresh never wipes your work. Fully client-side; the backend stores no transcripts.
-- **History** — finished or parked encounters are archived in the browser (IndexedDB); reopen one read-only or continue an unmarked case where you left off.
+- **History** — finished or parked encounters are archived in the browser (IndexedDB); reopen one read-only or continue an unmarked case where you left off. Signed-in users' archives also sync across devices.
+- **Feedback & contact** — an in-app feedback form (sidebar footer; anonymous, no account needed) plus per-case "report an issue" from every marksheet; `/about` and `/privacy` tell the project's story; mail to any address `@pacesbuddy.com` (e.g. hello@) is forwarded to the maintainers via Resend Inbound.
 - **Two doors** — the managed door is a single **free practice** option (routed server-side through **Vercel AI Gateway** — one operator key, one top-up, zero markup; the model is never named to the user). BYOK adds the direct Claude lineup (Sonnet 4.6 / Opus 4.8 / Haiku 4.5 on your own Anthropic key) — BYOK is Claude-only.
 - **Two access doors** — bring your own API key (kept only in your browser, one saved slot per provider, no account needed), or sign in with your email + a 6-digit code and practise on the app's own metered allowance (see *Managed access* below).
 
-All study state — transcripts, history, keys — lives in the candidate's own browser; the server never stores a transcript. A managed sign-in adds only a minimal server-side account: email, tier, and a monthly usage meter.
+All study state — transcripts, history, keys — lives in the candidate's own browser by default. A managed sign-in adds a minimal server-side account (email, tier, a monthly usage meter) and, so history can follow you across devices, a copy of your archived encounters — your own transcript and marksheet only, never the hidden case files or answer keys.
 
 ## Run it locally
 
