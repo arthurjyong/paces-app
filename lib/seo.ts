@@ -15,7 +15,7 @@ import type { Metadata } from 'next';
 
 /** Master switch for search discoverability. While false the whole site is
  *  noindexed and robots.txt disallows all crawling; flip to true to launch. */
-export const SITE_INDEXABLE = false;
+export const SITE_INDEXABLE = true;
 
 export const SITE_URL = 'https://pacesbuddy.com';
 export const SITE_NAME = 'PACES Buddy';
