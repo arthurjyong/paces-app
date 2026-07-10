@@ -5,18 +5,47 @@
 // contributions of ideas/corrections/recalls/code instead, and the
 // "supplement, not replacement, for the bedside" positioning up front.
 
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
+import JsonLd from '@/components/JsonLd';
+import { pageMetadata, faqPageLd } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'About — PACES Buddy',
+export const metadata = pageMetadata({
+  title: 'About',
   description:
     'PACES Buddy is a free, open-source AI practice partner for MRCP PACES — a grassroots project by residents, for candidates.',
-};
+  path: '/about',
+});
+
+// FAQPage structured data — mirrors the visible FAQ <dl> below verbatim (the
+// on-page text is the source of truth; keep these in sync if the copy changes).
+const FAQ = [
+  {
+    question: 'Which AI does it run on?',
+    answer:
+      'When you sign in, you practise on a model paid for by the project. If you want a stronger examiner, add your own Claude API key in Settings — it is stored only in your browser, sent per-request, never saved on our server, and you pay the provider directly.',
+  },
+  {
+    question: 'Is my data safe?',
+    answer:
+      'Short version: we store your account email and your study history (so it syncs across devices), your API key is never saved on our server, and there are no ads or third-party trackers. The long version is on the privacy & disclaimer page.',
+  },
+  {
+    question: 'Can I trust the answers?',
+    answer:
+      'The examiner is grounded in a curated case bank and reference notes, but it is still AI and can be wrong. Treat a surprising claim as a prompt to open the textbook — and report it, so the next candidate gets a better case.',
+  },
+  {
+    question: 'Why is it free?',
+    answer:
+      'Because we wished this existed when we started preparing. It stays free as long as the running costs stay manageable.',
+  },
+];
 
 export default function AboutPage() {
   return (
+    <>
+      <JsonLd data={faqPageLd(FAQ)} />
     <main className="min-h-dvh bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="mx-auto max-w-2xl px-6 py-10">
         <Link href="/" className="flex w-fit items-center gap-2.5" aria-label="PACES Buddy — back to the app">
@@ -66,7 +95,8 @@ export default function AboutPage() {
         <h2 className="mt-8 text-base font-semibold">Make it better</h2>
         <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
           <li>
-            Something broken, or an idea? Use <strong>Feedback</strong> in the app&apos;s sidebar.
+            Something broken, or an idea? Use <strong>Feedback</strong>{' '}
+            in the app&apos;s sidebar.
           </li>
           <li>
             A wrong answer key or an unrealistic case? Report it straight from the marksheet —
@@ -95,8 +125,8 @@ export default function AboutPage() {
           <div>
             <dt className="font-medium text-zinc-800 dark:text-zinc-200">Which AI does it run on?</dt>
             <dd className="mt-1 text-zinc-600 dark:text-zinc-300">
-              The free signed-in tier runs on a managed model paid for by the project. If you want
-              a stronger examiner, add your own Claude API key in Settings — it is stored only in
+              When you sign in, you practise on a model paid for by the project. If you want a
+              stronger examiner, add your own Claude API key in Settings — it is stored only in
               your browser, sent per-request, never saved on our server, and you pay the provider
               directly.
             </dd>
@@ -152,5 +182,6 @@ export default function AboutPage() {
         </p>
       </div>
     </main>
+    </>
   );
 }

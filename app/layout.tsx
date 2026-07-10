@@ -1,6 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import {
+  SITE_URL,
+  SITE_NAME,
+  SITE_TITLE_DEFAULT,
+  SITE_DESCRIPTION,
+  robotsMeta,
+} from "@/lib/seo";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,12 +21,30 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PACES Buddy — AI practice partner",
-  description: "PACES Buddy — AI practice partner for MRCP PACES",
-  // Pre-launch (audience of one) AND the interim build carries third-party
-  // clinical images — keep it out of search indexes until images are swapped to
-  // open-licensed sources. Remove once the app is intended to be discoverable.
-  robots: { index: false, follow: false },
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_TITLE_DEFAULT, template: `%s — ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  alternates: { canonical: "/" },
+  // Site-wide default share card; child pages override title/description.
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    url: "/",
+    title: SITE_TITLE_DEFAULT,
+    description: SITE_DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE_DEFAULT,
+    description: SITE_DESCRIPTION,
+  },
+  // Discoverability is gated by SITE_INDEXABLE in lib/seo.ts (currently the
+  // whole site is noindexed: pre-launch, and pending the third-party clinical
+  // image swap). Flip that one flag to launch. The /case-images/* noimageindex
+  // header in next.config.ts is separate and stays regardless.
+  robots: robotsMeta(),
 };
 
 export const viewport: Viewport = {

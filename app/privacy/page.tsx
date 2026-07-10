@@ -3,14 +3,16 @@
 // for bedside practice). Static server component, linked from /about and the
 // sidebar footer's About page.
 
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Privacy & disclaimer — PACES Buddy',
-  description: 'What PACES Buddy stores, what never leaves your browser, and what this tool is — and is not.',
-};
+export const metadata = pageMetadata({
+  title: 'Privacy & disclaimer',
+  description:
+    'What PACES Buddy stores, what never leaves your browser, and what this tool is — and is not.',
+  path: '/privacy',
+});
 
 export default function PrivacyPage() {
   return (
@@ -36,8 +38,8 @@ export default function PrivacyPage() {
             hidden case files and answer keys never leave the server.
           </li>
           <li>
-            <strong>Usage metering:</strong> for the free tier, the cost of each AI call is
-            recorded against your account so the monthly allowance works.
+            <strong>Usage metering:</strong> when you are signed in, the cost of each AI call is
+            recorded against your account so we can keep it within a fair monthly limit.
           </li>
           <li>
             <strong>Feedback:</strong> whatever you type in the feedback form, with your account
