@@ -145,3 +145,41 @@ export function faqPageLd(items: { question: string; answer: string }[]) {
     })),
   };
 }
+
+/**
+ * Structured data for a /[slug] landing page: a WebPage (condition pages are
+ * MedicalWebPage) that belongs to the brand Organization, plus a two-level
+ * BreadcrumbList (Home → this page). FAQ, when present, is rendered separately
+ * via faqPageLd so Google reads a clean FAQPage.
+ */
+export function landingGraphLd(opts: {
+  slug: string;
+  kind: 'format' | 'hub' | 'condition';
+  title: string;
+  description: string;
+  name: string;
+}) {
+  const url = `${SITE_URL}/${opts.slug}`;
+  const webPage = {
+    '@type': opts.kind === 'condition' ? 'MedicalWebPage' : 'WebPage',
+    '@id': url,
+    url,
+    name: opts.title,
+    description: opts.description,
+    inLanguage: 'en',
+    isPartOf: { '@id': ORG_ID },
+    about: { '@id': ORG_ID },
+    audience: { '@type': 'EducationalAudience', educationalRole: 'MRCP PACES candidate' },
+  };
+  const breadcrumb = {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: SITE_NAME, item: SITE_URL },
+      { '@type': 'ListItem', position: 2, name: opts.name, item: url },
+    ],
+  };
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [webPage, breadcrumb, organizationLd()],
+  };
+}

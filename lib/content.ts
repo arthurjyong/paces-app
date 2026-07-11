@@ -7,7 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { CaseImage, CaseMeta, Manifest, PublicCaseMeta, PublicManifest } from './types';
+import type { CaseImage, CaseMeta, LandingPage, Manifest, PublicCaseMeta, PublicManifest } from './types';
 
 const CONTENT_DIR = path.join(process.cwd(), 'content');
 
@@ -336,4 +336,69 @@ export function getRubric(): string {
   if (rubricCache) return rubricCache;
   rubricCache = readContentFile('rubric.md');
   return rubricCache;
+}
+
+// ---------------------------------------------------------------------------
+// Landing pages (public SEO revision content; content/landing/<slug>.json)
+// ---------------------------------------------------------------------------
+
+let landingCache: Map<string, LandingPage> | null = null;
+
+/** Load + validate all landing pages once. Absent dir = no landing pages
+ *  (optional feature — the /[slug] route then statically generates nothing). */
+function loadLanding(): Map<string, LandingPage> {
+  if (landingCache) return landingCache;
+  const map = new Map<string, LandingPage>();
+  const dir = path.join(CONTENT_DIR, 'landing');
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+  } catch {
+    landingCache = map; // no landing/ dir — feature simply absent
+    return map;
+  }
+  for (const f of files) {
+    let page: LandingPage;
+    try {
+      page = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as LandingPage;
+    } catch {
+      continue; // skip a malformed file rather than fail the whole route tree
+    }
+    // The slug in the JSON is authoritative (it is the URL); require it and the
+    // core render fields, else skip — a half-authored page must not 500 /[slug].
+    if (
+      page &&
+      typeof page.slug === 'string' &&
+      page.slug.length > 0 &&
+      typeof page.h1 === 'string' &&
+      Array.isArray(page.sections)
+    ) {
+      map.set(page.slug, page);
+    }
+  }
+  landingCache = map;
+  return map;
+}
+
+/** All landing slugs (sorted) — drives generateStaticParams + the sitemap. */
+export function getLandingSlugs(): string[] {
+  return [...loadLanding().keys()].sort();
+}
+
+/** One landing page by slug, or undefined (→ 404). */
+export function getLandingPage(slug: string): LandingPage | undefined {
+  return loadLanding().get(slug);
+}
+
+/**
+ * relatedSlugs a page can actually link to — its declared relatedSlugs
+ * intersected with the slugs that exist on disk (drops any dangling target so
+ * the rendered internal links never 404).
+ */
+export function resolveRelated(page: LandingPage): LandingPage[] {
+  const all = loadLanding();
+  return (page.relatedSlugs ?? [])
+    .filter((s) => s !== page.slug && all.has(s))
+    .map((s) => all.get(s)!)
+    .filter((p, i, arr) => arr.findIndex((q) => q.slug === p.slug) === i);
 }

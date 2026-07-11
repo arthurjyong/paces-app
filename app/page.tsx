@@ -16,8 +16,17 @@ import Link from 'next/link';
 import HomeApp from '@/components/HomeApp';
 import JsonLd from '@/components/JsonLd';
 import { SITE_NAME, SITE_DESCRIPTION, GITHUB_URL, homeGraphLd } from '@/lib/seo';
+import { getLandingSlugs, getLandingPage } from '@/lib/content';
 
 export default function Page() {
+  // Crawlable internal links to the revision guides — this gives every landing
+  // page a direct link from the homepage (the highest-authority page), so
+  // crawlers discover them beyond the sitemap and internal link equity flows in.
+  // sr-only, so the minimalist practice UI is unchanged.
+  const guides = getLandingSlugs()
+    .map((slug) => getLandingPage(slug))
+    .filter((p): p is NonNullable<typeof p> => Boolean(p));
+
   return (
     <>
       <div className="sr-only">
@@ -29,6 +38,18 @@ export default function Page() {
           <Link href="/privacy">privacy &amp; disclaimer</Link>, or see the{' '}
           <a href={GITHUB_URL}>source code on GitHub</a>.
         </p>
+        {guides.length > 0 && (
+          <nav aria-label="PACES revision guides">
+            <h2>Free MRCP PACES revision guides</h2>
+            <ul>
+              {guides.map((p) => (
+                <li key={p.slug}>
+                  <Link href={`/${p.slug}`}>{p.h1}</Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
       </div>
       <HomeApp />
       <JsonLd data={homeGraphLd()} />

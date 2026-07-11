@@ -257,3 +257,49 @@ export interface AuthRequestResponse {
 export interface AuthVerifyResponse {
   ok: true;
 }
+
+// ---------------------------------------------------------------------------
+// Public SEO landing pages (name-free revision content served at /[slug]).
+// Authored offline (see _SEO_NOTES.md + scripts/build-content.mjs), stored as
+// content/landing/<slug>.json, rendered statically. These carry NO hidden case
+// material — they are public revision pages ABOUT named conditions/stations,
+// deliberately decoupled from the opaque case bank (no case codes, no answer
+// keys). Shape mirrors the workflow's PAGE_SCHEMA.
+// ---------------------------------------------------------------------------
+
+export type LandingKind = 'format' | 'hub' | 'condition';
+
+export interface LandingSection {
+  heading: string;
+  /** body paragraphs; may contain **bold** inline markers (no other markdown) */
+  paragraphs?: string[];
+  /** bullet items; may contain **bold** inline markers */
+  bullets?: string[];
+}
+
+export interface LandingFaq {
+  question: string;
+  answer: string;
+}
+
+export interface LandingPage {
+  /** URL slug (also the filename stem); the page renders at /<slug> */
+  slug: string;
+  kind: LandingKind;
+  /** the <title> (layout appends " — PACES Buddy") */
+  title: string;
+  /** meta description, ~150 chars */
+  metaDescription: string;
+  /** visible page heading */
+  h1: string;
+  /** lede paragraph under the h1 */
+  intro: string;
+  sections: LandingSection[];
+  faq?: LandingFaq[];
+  /** internal links to other landing slugs (validated against on-disk slugs at load) */
+  relatedSlugs: string[];
+  /** one-line invitation to practise in the app */
+  practiceCta: string;
+  /** reference search phrases (not rendered) */
+  keywords: string[];
+}

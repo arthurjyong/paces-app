@@ -19,10 +19,16 @@ const SRC_RUBRIC = path.join(CORPUS_ROOT, '5_Carousels_PACES23', 'MARKING_RUBRIC
 const SRC_LIBRARY = path.join(CORPUS_ROOT, '_case_library');
 // Stable opaque case ids (c0001…), maintained by ../_index (survive renames/moves).
 const SRC_CASE_IDS = path.join(CORPUS_ROOT, '_index', 'case_ids.json');
+// Public SEO revision landing pages (name-free, authored from the canonical
+// notes — see _SEO_NOTES.md). Source lives OUTSIDE the public app repo so it
+// ships from local disk at deploy like the rest of content/. Optional: absent
+// dir just yields no landing pages.
+const SRC_LANDING = path.join(CORPUS_ROOT, '_index', 'landing');
 
 const OUT = path.join(APP_ROOT, 'content');
 const OUT_CASES = path.join(OUT, 'cases');
 const OUT_CANONICAL = path.join(OUT, 'canonical');
+const OUT_LANDING = path.join(OUT, 'landing');
 
 // ---------- small helpers ----------
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -229,6 +235,19 @@ if (canonicalFiles.length !== 156) {
 
 // ---------- rubric ----------
 fs.writeFileSync(path.join(OUT, 'rubric.md'), fs.readFileSync(SRC_RUBRIC, 'utf8'));
+
+// ---------- landing pages (public SEO revision content) ----------
+// Verbatim copy of the authored JSON into content/landing/. These are served by
+// the STATIC /[slug] routes (lib/content.ts getLandingPage) and carry no hidden
+// case material — but they still ship from local disk, never the public repo.
+let landingCount = 0;
+if (fs.existsSync(SRC_LANDING)) {
+  fs.mkdirSync(OUT_LANDING, { recursive: true });
+  for (const f of fs.readdirSync(SRC_LANDING).filter((f) => f.endsWith('.json')).sort()) {
+    fs.writeFileSync(path.join(OUT_LANDING, f), fs.readFileSync(path.join(SRC_LANDING, f), 'utf8'));
+    landingCount++;
+  }
+}
 
 // ---------- kb_lookup.json from MASTER_INDEX.json topic_lookup ----------
 const masterIndex = JSON.parse(fs.readFileSync(SRC_MASTER_INDEX, 'utf8'));
@@ -554,6 +573,7 @@ console.log('=== build-content.mjs report ===');
 console.log(`clinical images:  ${caseImageAssets} assets → ${caseImageLinks} case links (${Object.keys(caseImagesByCode).length} cases)`);
 console.log(`cases:            ${cases.length} (${carouselCount} carousel + ${libraryCount} library)`);
 console.log(`canonical notes:  ${canonicalFiles.length} (>= 156)`);
+console.log(`landing pages:    ${landingCount}`);
 console.log(`kb terms:         ${Object.keys(kbLookup).length}`);
 console.log(`stem failures:    ${stemFailures.length}`);
 if (stemFailures.length) for (const f of stemFailures) console.log(`  MISSING STEM: ${f}`);
