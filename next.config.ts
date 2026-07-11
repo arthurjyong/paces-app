@@ -15,6 +15,29 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_BUILD_STAMP:
       new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 16).replace("T", " ") + " GMT+8",
   },
+  // Canonical-host redirects: 308 the www alias and the stable Vercel
+  // production alias to the apex domain, so there is a single indexable host.
+  // The metadataBase canonical tags already point search engines at the apex;
+  // these make it authoritative and stop the vercel.app URL competing in the
+  // index. Only the exact production aliases match, so per-deployment
+  // *.vercel.app preview URLs (used for testing) are left alone. The apex
+  // itself has no rule, so there is no redirect loop.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.pacesbuddy.com" }],
+        destination: "https://pacesbuddy.com/:path*",
+        permanent: true,
+      },
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "paces-app.vercel.app" }],
+        destination: "https://pacesbuddy.com/:path*",
+        permanent: true,
+      },
+    ];
+  },
   // Baseline security response headers on every route (security audit
   // 2026-07-09). CSP is strict but allows the inline styles Tailwind injects +
   // the Vercel Analytics/Insights hosts; frame-ancestors 'none' + XFO DENY stop
