@@ -73,11 +73,16 @@ export function pageMetadata(opts: { title: string; description: string; path: s
       title: fullTitle,
       description: opts.description,
       locale: 'en_US',
+      // Child pages set their own openGraph, which replaces (not merges) the
+      // layout's — and that drops the file-convention /opengraph-image. Re-add
+      // it explicitly so /about and /privacy also unfurl with the brand card.
+      images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: SITE_NAME }],
     },
     twitter: {
       card: 'summary_large_image',
       title: fullTitle,
       description: opts.description,
+      images: ['/opengraph-image'],
     },
   };
 }
@@ -110,7 +115,7 @@ export function webApplicationLd() {
     url: SITE_URL,
     description: SITE_DESCRIPTION,
     applicationCategory: 'EducationalApplication',
-    operatingSystem: 'Web browser',
+    operatingSystem: 'Any',
     browserRequirements: 'Requires JavaScript',
     inLanguage: 'en',
     isAccessibleForFree: true,
