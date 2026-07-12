@@ -24,6 +24,10 @@ interface ChatPaneProps {
   error: string | null;
   canRetry: boolean;
   marksheet: MarkSheet | null;
+  /** Transcript index the marksheet card is pinned to: turns from BEFORE marking
+   *  render above it, the debrief and anything asked after render below. null →
+   *  pin to the end (unmarked, or an encounter saved before this existed). */
+  marksheetAt: number | null;
   markUsage: TokenUsage | null;
   hasKey: boolean;
   /** Offer voice dictation: renders the mic beside Send (it appears only when a
@@ -58,6 +62,7 @@ export default function ChatPane({
   error,
   canRetry,
   marksheet,
+  marksheetAt,
   markUsage,
   hasKey,
   dictation,
@@ -121,6 +126,58 @@ export default function ChatPane({
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
   }, [draft, voice]);
+
+  /** Where the marksheet card sits. Without an anchor (an older encounter) it
+   *  falls to the end — the behaviour it always had. */
+  const markAnchor = marksheet ? (marksheetAt ?? entries.length) : entries.length;
+
+  function renderTurn(entry: TranscriptEntry, i: number) {
+    if (entry.role === 'user' && entry.content === BEGIN_MESSAGE) {
+      return <Divider key={i} label="Encounter started" />;
+    }
+    if (entry.role === 'user') {
+      return (
+        <div key={i} className="flex justify-end">
+          <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-teal-700 px-3.5 py-2 text-sm leading-6 text-white dark:bg-teal-600">
+            <RichText text={entry.content} />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={i} className="flex flex-col items-start">
+        <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-zinc-200 bg-white px-3.5 py-2 text-sm leading-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <RichText text={entry.content} />
+        </div>
+        {entry.images && entry.images.length > 0 && (
+          <div className="mt-2 flex max-w-[85%] flex-wrap gap-2">
+            {entry.images.map((img, k) => (
+              <figure
+                key={k}
+                className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.url}
+                  alt={img.caption}
+                  loading="lazy"
+                  className="max-h-72 w-auto max-w-full object-contain"
+                />
+                <figcaption className="border-t border-zinc-100 px-2.5 py-1.5 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                  {img.caption}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
+        {entry.usage && (
+          <p className="mt-1 pl-1 text-[11px] text-zinc-400 dark:text-zinc-500">
+            {usageLine(entry.usage, entry.kbLookups)}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   function submitDraft() {
     const text = draft.trim();
@@ -196,10 +253,14 @@ export default function ChatPane({
         <button
           type="button"
           onClick={onMark}
-          disabled={!started || pending !== null}
+          // An encounter is marked ONCE (owner, 2026-07-12): re-marking would
+          // spend the user's credit to overwrite the marksheet they already
+          // have, and the debrief that follows is not a second performance.
+          disabled={!started || pending !== null || marksheet !== null}
+          title={marksheet ? 'This encounter has already been marked' : undefined}
           className="shrink-0 rounded-md bg-teal-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-teal-600 dark:hover:bg-teal-500"
         >
-          {pending === 'mark' ? 'Marking…' : 'Finish & marksheet'}
+          {pending === 'mark' ? 'Marking…' : marksheet ? 'Marked' : 'Finish & marksheet'}
         </button>
         <button
           type="button"
@@ -243,50 +304,33 @@ export default function ChatPane({
             )}
           </div>
 
-          {/* Turns */}
-          {entries.map((entry, i) =>
-            entry.role === 'user' && entry.content === BEGIN_MESSAGE ? (
-              <Divider key={i} label="Encounter started" />
-            ) : entry.role === 'user' ? (
-              <div key={i} className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-teal-700 px-3.5 py-2 text-sm leading-6 text-white dark:bg-teal-600">
-                  <RichText text={entry.content} />
-                </div>
-              </div>
-            ) : (
-              <div key={i} className="flex flex-col items-start">
-                <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-zinc-200 bg-white px-3.5 py-2 text-sm leading-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                  <RichText text={entry.content} />
-                </div>
-                {entry.images && entry.images.length > 0 && (
-                  <div className="mt-2 flex max-w-[85%] flex-wrap gap-2">
-                    {entry.images.map((img, k) => (
-                      <figure
-                        key={k}
-                        className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.url}
-                          alt={img.caption}
-                          loading="lazy"
-                          className="max-h-72 w-auto max-w-full object-contain"
-                        />
-                        <figcaption className="border-t border-zinc-100 px-2.5 py-1.5 text-xs leading-5 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                          {img.caption}
-                        </figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                )}
-                {entry.usage && (
-                  <p className="mt-1 pl-1 text-[11px] text-zinc-400 dark:text-zinc-500">
-                    {usageLine(entry.usage, entry.kbLookups)}
-                  </p>
-                )}
-              </div>
-            ),
+          {/* Turns up to the moment the marksheet was earned. */}
+          {entries.slice(0, markAnchor).map((entry, i) => renderTurn(entry, i))}
+
+          {/* The marksheet sits WHERE IT WAS EARNED, not at the bottom. Marking
+              doesn't close the encounter — the examiner debriefs and takes
+              questions afterwards — and pinning the card last pushed those later
+              turns above it, so a candidate who didn't scroll up believed their
+              question hadn't sent (owner report 2026-07-12). */}
+          {marksheet && (
+            <>
+              <MarksheetCard marksheet={marksheet} usage={markUsage} />
+              <p className="text-center text-xs text-zinc-400 dark:text-zinc-500">
+                Spotted an error in this case?{' '}
+                <button
+                  type="button"
+                  onClick={onReportCase}
+                  className="underline hover:text-teal-700 dark:hover:text-teal-300"
+                >
+                  Report it
+                </button>
+              </p>
+              {entries.length > markAnchor && <Divider label="After marking" />}
+            </>
           )}
+
+          {/* Turns after marking: the debrief, and anything you ask next. */}
+          {entries.slice(markAnchor).map((entry, i) => renderTurn(entry, markAnchor + i))}
 
           {pending && (
             <div className="flex items-center gap-2 pl-1 text-sm text-zinc-400 dark:text-zinc-500">
@@ -314,21 +358,6 @@ export default function ChatPane({
             </div>
           )}
 
-          {marksheet && (
-            <>
-              <MarksheetCard marksheet={marksheet} usage={markUsage} />
-              <p className="mt-2 text-center text-xs text-zinc-400 dark:text-zinc-500">
-                Spotted an error in this case?{' '}
-                <button
-                  type="button"
-                  onClick={onReportCase}
-                  className="underline hover:text-teal-700 dark:hover:text-teal-300"
-                >
-                  Report it
-                </button>
-              </p>
-            </>
-          )}
         </div>
       </div>
 

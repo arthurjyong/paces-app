@@ -105,6 +105,8 @@ export interface SavedEncounter {
   entries: TranscriptEntry[];
   marksheet: MarkSheet | null;
   markUsage: TokenUsage | null;
+  /** Transcript position the marksheet is pinned to (see EncounterPayload). */
+  marksheetAt?: number | null;
   savedAt: string;
 }
 
@@ -190,6 +192,16 @@ export interface EncounterPayload {
   entries: TranscriptEntry[];
   marksheet: MarkSheet | null;
   markUsage: TokenUsage | null;
+  /**
+   * How many transcript entries existed when the marksheet was produced — the
+   * position the card is PINNED to in the transcript. Marking does not close
+   * the encounter (the examiner debriefs and takes follow-ups afterwards), and
+   * rendering the card last pushed those later turns ABOVE it, so a candidate
+   * who didn't scroll up thought their question hadn't sent (owner report
+   * 2026-07-12). null = unmarked, or a blob written before this field existed —
+   * the card then falls to the end, exactly as it used to.
+   */
+  marksheetAt: number | null;
 }
 
 /**
@@ -204,6 +216,7 @@ export function sanitizeEncounterPayload(p: {
   entries?: unknown;
   marksheet?: unknown;
   markUsage?: unknown;
+  marksheetAt?: unknown;
 }): EncounterPayload | null {
   if (typeof p.stem !== 'string' || p.stem.length === 0) return null;
   if (!Array.isArray(p.entries)) return null;
@@ -213,11 +226,19 @@ export function sanitizeEncounterPayload(p: {
     if (!clean) return null;
     entries.push(clean);
   }
+  // Clamped into the transcript: a corrupt or foreign anchor must not be able
+  // to hide turns or push the card out of the list.
+  const at = p.marksheetAt;
+  const marksheetAt =
+    typeof at === 'number' && Number.isInteger(at) && at >= 0
+      ? Math.min(at, entries.length)
+      : null;
   return {
     stem: p.stem,
     entries,
     marksheet: isMarkSheet(p.marksheet) ? p.marksheet : null,
     markUsage: isTokenUsage(p.markUsage) ? p.markUsage : null,
+    marksheetAt,
   };
 }
 

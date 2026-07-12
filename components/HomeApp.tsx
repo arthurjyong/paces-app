@@ -148,6 +148,10 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
   const [pending, setPending] = useState<'chat' | 'mark' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [marksheet, setMarksheet] = useState<MarkSheet | null>(null);
+  /** Transcript position the marksheet card is pinned to — the debrief and
+   *  any follow-up questions after marking render BELOW it, not above (see
+   *  EncounterPayload.marksheetAt). */
+  const [marksheetAt, setMarksheetAt] = useState<number | null>(null);
   const [markUsage, setMarkUsage] = useState<TokenUsage | null>(null);
 
   // Managed access (httpOnly cookie session — the client only ever sees the
@@ -285,6 +289,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
       setPublicCase(null);
       setEntries([]);
       setMarksheet(null);
+      setMarksheetAt(null);
       setMarkUsage(null);
       setError(null);
     }
@@ -393,6 +398,9 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
     setPublicCase({ meta, stem: saved.stem });
     setEntries(saved.entries);
     setMarksheet(saved.marksheet);
+    // A blob written before the anchor existed was saved when the card always
+    // rendered last — so that IS where it was: pin it to the end.
+    setMarksheetAt(saved.marksheet ? (saved.marksheetAt ?? saved.entries.length) : null);
     setMarkUsage(saved.markUsage);
     setError(retryNotice(saved.entries, saved.marksheet));
     autosaveEnabledRef.current = true;
@@ -411,10 +419,11 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
       meta: publicCase.meta,
       entries,
       marksheet,
+      marksheetAt,
       markUsage,
       savedAt: new Date().toISOString(),
     });
-  }, [publicCase, entries, marksheet, markUsage]);
+  }, [publicCase, entries, marksheet, marksheetAt, markUsage]);
 
   /**
    * Park the live encounter (if it has any transcript) into the History
@@ -434,6 +443,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
       stem: publicCase.stem,
       entries,
       marksheet,
+      marksheetAt,
       markUsage,
     };
     try {
@@ -445,7 +455,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
     } catch {
       return false;
     }
-  }, [publicCase, entries, marksheet, markUsage, managedActive]);
+  }, [publicCase, entries, marksheet, marksheetAt, markUsage, managedActive]);
 
   const selectCase = useCallback(
     async (id: string) => {
@@ -472,6 +482,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
         setPublicCase(data as PublicCase);
         setEntries([]);
         setMarksheet(null);
+        setMarksheetAt(null);
         setMarkUsage(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load case.');
@@ -514,6 +525,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
         setPublicCase({ meta: rec.meta, stem: rec.stem });
         setEntries(rec.entries);
         setMarksheet(rec.marksheet);
+        setMarksheetAt(rec.marksheet ? (rec.marksheetAt ?? rec.entries.length) : null);
         setMarkUsage(rec.markUsage);
         setError(retryNotice(rec.entries, rec.marksheet));
         void refreshHistory();
@@ -555,6 +567,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
     setPublicCase(null);
     setEntries([]);
     setMarksheet(null);
+    setMarksheetAt(null);
     setMarkUsage(null);
     setError(null);
     try {
@@ -659,6 +672,11 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
 
   const mark = useCallback(async () => {
     if (!publicCase || pending || caseLoading || transitionRef.current || entries.length === 0) return;
+    // Mark ONCE. The button disables as soon as a marksheet lands; this is the
+    // guard behind it (a stale click, a double-fire). Re-marking would spend the
+    // user's credit to overwrite the marksheet they already have, and the debrief
+    // that follows marking is not a second performance to grade.
+    if (marksheet) return;
     const key = apiKey.trim();
     if (!key && !managedCovers && !cliBridgeCovers) {
       setError(keyMissingError);
@@ -689,13 +707,14 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
       if (!key && managedCovers) void refreshManagedStatus();
       const marked = data as ExaminerMarkResponse;
       setMarksheet(marked.marksheet);
+      setMarksheetAt(entries.length);
       setMarkUsage(marked.usage);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Request failed.');
     } finally {
       setPending(null);
     }
-  }, [publicCase, pending, caseLoading, entries, apiKey, managedCovers, cliBridgeCovers, keyMissingError, model, refreshManagedStatus]);
+  }, [publicCase, pending, caseLoading, entries, marksheet, apiKey, managedCovers, cliBridgeCovers, keyMissingError, model, refreshManagedStatus]);
 
   const newCase = useCallback(() => {
     if (pending || caseLoading || transitionRef.current) return;
@@ -711,6 +730,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
         setPublicCase(null);
         setEntries([]);
         setMarksheet(null);
+        setMarksheetAt(null);
         setMarkUsage(null);
         setError(null);
         setSidebarOpen(true);
@@ -837,6 +857,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
           error={error}
           canRetry={canRetry}
           marksheet={marksheet}
+          marksheetAt={marksheetAt}
           markUsage={markUsage}
           hasKey={hasKey}
           dictation={dictation}

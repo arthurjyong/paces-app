@@ -66,6 +66,9 @@ export function validateIncomingRecord(x: unknown): HistoryRecord | null {
     entries: (r.entries as unknown[]).slice(0, 500),
     marksheet: r.marksheet ?? null,
     markUsage: r.markUsage ?? null,
+    // Where the marksheet card sits in the transcript (turns that came after
+    // marking render BELOW it). Display data only; the client clamps it on read.
+    marksheetAt: typeof r.marksheetAt === 'number' ? r.marksheetAt : null,
   };
   let serialized: string;
   try {
