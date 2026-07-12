@@ -612,7 +612,7 @@ class ReserveRejected extends Error {
 
 export interface SettleUsage {
   model: string;
-  action: 'chat' | 'mark';
+  action: 'chat' | 'mark' | 'transcribe';
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

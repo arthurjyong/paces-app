@@ -48,6 +48,9 @@ const nextConfig: NextConfig = {
       "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data:",
+      // blob: is for the /lab dictation playground's local playback of a
+      // just-recorded clip — object URLs only, never a remote source.
+      "media-src 'self' blob:",
       "connect-src 'self' https://va.vercel-scripts.com https://vitals.vercel-insights.com",
       "font-src 'self'",
       "base-uri 'none'",
@@ -64,6 +67,22 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+      {
+        // The ONLY route allowed to reach the microphone: the /lab voice-
+        // dictation experiment (2026-07-12). Scoped deliberately — the mic
+        // permission is granted per-ORIGIN by the browser, so once a user
+        // allows it here, an origin-wide `microphone=(self)` would let script
+        // on ANY page (the practice pane, the landing pages) open the mic;
+        // our CSP must carry script-src 'unsafe-inline' for Tailwind, so this
+        // header is the backstop that keeps that unreachable. Duplicate header
+        // keys are last-match-wins in Next, so this entry (declared after the
+        // catch-all above) overrides Permissions-Policy for /lab only, and
+        // must therefore restate the full directive list.
+        source: "/lab",
+        headers: [
+          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
         ],
       },
       {

@@ -47,6 +47,18 @@ export default function PrivacyPage() {
           </li>
         </ul>
 
+        <h2 className="mt-8 text-base font-semibold">Voice dictation (Lab)</h2>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+          The experimental voice dictation in the Lab records audio <em>only</em> while you hold a
+          take — you tap Record, and your browser asks your permission first. The clip passes
+          through our server to the speech-recognition provider you pick, which returns the text;
+          we never save or log the audio, and the transcript lands in your text box exactly like
+          typed text. The providers (Groq, or OpenAI via Vercel AI Gateway) may keep a copy of the
+          audio briefly for their own abuse monitoring — up to 30 days in OpenAI&apos;s case —
+          under their own policies, so treat dictation like any other cloud service and do not
+          speak real patient identifiers into it.
+        </p>
+
         <h2 className="mt-8 text-base font-semibold">Your API key</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
           Your own API key, if you add one in Settings, is stored only in this browser. Each

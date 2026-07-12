@@ -28,7 +28,7 @@ const FAQ = [
   {
     question: 'Is my data safe?',
     answer:
-      'Short version: we store your account email and your study history (so it syncs across devices), your API key is never saved on our server, and there are no ads or third-party trackers. The long version is on the privacy & disclaimer page.',
+      'Short version: we store your account email and your study history (so it syncs across devices), your API key is never saved on our server, and there are no ads or third-party trackers. If you try voice dictation in the Lab, your recording passes through our server to a speech-recognition provider to be turned into text and is never stored by us. The long version is on the privacy & disclaimer page.',
   },
   {
     question: 'Can I trust the answers?',
@@ -136,7 +136,9 @@ export default function AboutPage() {
             <dd className="mt-1 text-zinc-600 dark:text-zinc-300">
               Short version: we store your account email and your study history (so it syncs
               across devices), your API key is never saved on our server, and there are no ads or
-              third-party trackers. The long version is on the{' '}
+              third-party trackers. If you try voice dictation in the Lab, your recording passes
+              through our server to a speech-recognition provider to be turned into text and is
+              never stored by us. The long version is on the{' '}
               <Link href="/privacy" className="underline hover:text-teal-700 dark:hover:text-teal-300">
                 privacy &amp; disclaimer
               </Link>{' '}
