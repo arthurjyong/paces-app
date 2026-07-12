@@ -11,10 +11,9 @@ import type { MarkSheet, PublicCase, TokenUsage } from '@/lib/types';
 import { BEGIN_MESSAGE, RichText, usageLine, type TranscriptEntry } from './shared';
 import MarksheetCard from './MarksheetCard';
 
-// Lazy: the whole dictation stack (recorder hook + glossaries + upload client)
-// is only fetched on the route that actually enables it (/lab/case). A static
-// import would ship it in the production home bundle as dead code — the
-// conditional render below is not tree-shakeable.
+// Lazy: the dictation stack (recorder hook + glossaries + upload client) is
+// fetched only when the composer actually offers a mic, so a signed-out visitor
+// never pays for code they cannot use.
 const ComposerMic = dynamic(() => import('./ComposerMic'), { ssr: false });
 
 interface ChatPaneProps {
@@ -27,10 +26,16 @@ interface ChatPaneProps {
   marksheet: MarkSheet | null;
   markUsage: TokenUsage | null;
   hasKey: boolean;
-  /** Lab experiment 2 (/lab/case): show the dictation mic beside Send. OFF in
-   *  the production app — graduating it there also needs the /lab-scoped
-   *  Permissions-Policy widened (see SPEC.md "Voice dictation"). */
+  /** Offer voice dictation: renders the mic beside Send (it appears only when a
+   *  transcription lane is actually reachable, i.e. the user is signed in). Set
+   *  by the home route. Any route that sets this MUST also carry the
+   *  `microphone=(self)` Permissions-Policy — see next.config.ts. */
   dictation?: boolean;
+  /** Whether the user has a live managed session. Used ONLY to predict, on the
+   *  first paint, whether a mic is coming — the app already knows this from
+   *  /api/auth/status, so the composer can render its final shape immediately
+   *  instead of flipping from two rows to one a few hundred ms later. */
+  managedActive?: boolean;
   /** Guidance shown when hasKey is false — provider-aware, built by the parent
    *  (covers both "no key for this provider" and "managed access doesn't cover
    *  this model"). */
@@ -56,6 +61,7 @@ export default function ChatPane({
   markUsage,
   hasKey,
   dictation,
+  managedActive,
   keyNotice,
   onBegin,
   onSend,
@@ -69,6 +75,21 @@ export default function ChatPane({
   /** A take is recording or transcribing: hold Send, or the user fires an
    *  empty draft and the words arrive in the next turn's box. */
   const [dictating, setDictating] = useState(false);
+  /**
+   * Is the mic actually usable? null = not answered yet. The composer's LAYOUT
+   * keys off this, not off the `dictation` prop: a signed-out/BYOK user, or a
+   * browser that cannot record, gets no mic — and being told to "speak" with no
+   * microphone in sight would be nonsense.
+   *
+   * Until ComposerMic answers (a lazy chunk fetch + a round-trip to
+   * /api/transcribe), fall back to `managedActive`, which the app already
+   * resolved at load. That prediction is right for the overwhelming majority,
+   * so the composer paints its final shape at once instead of visibly
+   * collapsing from two rows to one a few hundred ms later — on every Begin,
+   * every New case, every reload (review 2026-07-12).
+   */
+  const [micReady, setMicReady] = useState<boolean | null>(null);
+  const voice = Boolean(dictation) && (micReady ?? Boolean(managedActive));
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const started = entries.length > 0;
@@ -84,18 +105,22 @@ export default function ChatPane({
     if (started && !pending) textareaRef.current?.focus();
   }, [started, pending]);
 
-  // Dictation composer only: the box starts at the same 44px height as the mic
-  // and Send buttons, then grows with the text (up to max-h-40, after which it
+  // Voice composer only: the box starts at the same 44px height as the mic and
+  // Send buttons, then grows with the text (up to max-h-40, after which it
   // scrolls). A fixed 2-row box left the row visually ragged and clipped the
   // placeholder on a phone. Runs on every draft change — including the reset to
-  // '' after Send, which snaps it back to one row.
+  // '' after Send, which snaps it back to one row — and on `voice` itself, so
+  // the inline height is cleared if the mic goes away (session expiry).
   useEffect(() => {
-    if (!dictation) return;
     const el = textareaRef.current;
     if (!el) return;
+    if (!voice) {
+      el.style.height = '';
+      return;
+    }
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [draft, dictation]);
+  }, [draft, voice]);
 
   function submitDraft() {
     const text = draft.trim();
@@ -313,7 +338,7 @@ export default function ChatPane({
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <textarea
               ref={textareaRef}
-              rows={dictation ? 1 : 2}
+              rows={voice ? 1 : 2}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -327,7 +352,7 @@ export default function ChatPane({
               // once the mic and Send take their share, so a longer string
               // wraps to a second line and is clipped.
               placeholder={
-                dictation
+                voice
                   ? 'Type or speak…'
                   : 'Describe what you examine, ask, or say… (Enter to send, Shift+Enter for a new line)'
               }
@@ -335,7 +360,7 @@ export default function ChatPane({
               // and grows with the text (see the autosize effect above);
               // without it, the original two-row composer is unchanged.
               className={`max-h-40 flex-1 resize-none overflow-y-auto rounded-md border border-zinc-300 bg-white px-3 py-2 text-base leading-6 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:opacity-60 md:text-sm dark:border-zinc-700 dark:bg-zinc-950 ${
-                dictation ? 'min-h-11' : 'min-h-[2.5rem]'
+                voice ? 'min-h-11' : 'min-h-[2.5rem]'
               }`}
             />
             {dictation && (
@@ -348,6 +373,7 @@ export default function ChatPane({
                   entries: entries.map((e) => ({ role: e.role, content: e.content })),
                 }}
                 onBusyChange={setDictating}
+                onAvailable={setMicReady}
                 onText={(text) => {
                   setDraft((d) => {
                     const base = d.replace(/\s+$/, '');
@@ -361,11 +387,10 @@ export default function ChatPane({
               type="button"
               onClick={submitDraft}
               disabled={pending !== null || dictating || draft.trim().length === 0}
-              // h-11 ONLY when the mic is present (it matches the mic's 44px
-              // tap target); the production composer keeps its original
-              // py-2 button, byte-for-byte.
+              // h-11 ONLY when the mic is actually present (matching its 44px
+              // tap target); without a mic the button keeps its original size.
               className={`rounded-md bg-teal-700 px-4 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-teal-600 dark:hover:bg-teal-500 ${
-                dictation ? 'h-11' : 'py-2'
+                voice ? 'h-11' : 'py-2'
               }`}
             >
               Send

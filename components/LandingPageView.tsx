@@ -34,10 +34,11 @@ export default function LandingPageView({
     <main className="min-h-dvh bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="mx-auto max-w-2xl px-6 py-10">
         {/* Brand header — same as /about; the logo links back to the app. */}
-        <Link href="/" className="flex w-fit items-center gap-2.5" aria-label="PACES Buddy — back to the app">
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
+        <a href="/" className="flex w-fit items-center gap-2.5" aria-label="PACES Buddy — back to the app">
           <Logo className="h-7 w-7" />
           <span className="text-base font-semibold tracking-tight">PACES Buddy</span>
-        </Link>
+        </a>
 
         <h1 className="mt-8 text-2xl font-semibold tracking-tight">{page.h1}</h1>
         <p className="mt-4 text-sm leading-6 text-zinc-600 dark:text-zinc-300">{inline(page.intro, 'intro')}</p>
@@ -77,12 +78,13 @@ export default function LandingPageView({
         {/* Practice CTA — the one place these pages push into the app. */}
         <div className="mt-10 rounded-xl border border-teal-200 bg-teal-50 p-5 dark:border-teal-900 dark:bg-teal-950/40">
           <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-200">{inline(page.practiceCta, 'cta')}</p>
-          <Link
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
+          <a
             href="/"
             className="mt-3 inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
           >
             Start practising — it&apos;s free
-          </Link>
+          </a>
         </div>
 
         {related.length > 0 && (
@@ -101,9 +103,10 @@ export default function LandingPageView({
         )}
 
         <p className="mt-10 border-t border-zinc-200 pt-4 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
-          <Link href="/" className="underline hover:text-teal-700 dark:hover:text-teal-300">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
+          <a href="/" className="underline hover:text-teal-700 dark:hover:text-teal-300">
             PACES Buddy home
-          </Link>
+          </a>
           {' · '}
           <Link href="/about" className="underline hover:text-teal-700 dark:hover:text-teal-300">
             About

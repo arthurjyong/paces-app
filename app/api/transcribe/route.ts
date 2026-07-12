@@ -21,9 +21,12 @@ import type { ApiError } from '@/lib/types';
 import {
   managedEnabled,
   readManagedSession,
+  remainingAllowanceUsd,
   reserveSpend,
   resolveTier,
   settleSpend,
+  transcribesInLastDay,
+  MAX_TRANSCRIBE_PER_DAY,
 } from '@/lib/managed';
 import {
   actualTranscribeUsd,
@@ -34,6 +37,7 @@ import {
   sttModelInfo,
   transcribeClip,
   SttUpstreamError,
+  STT_MODELS,
 } from '@/lib/stt';
 import { sniffAudioDurationSeconds } from '@/lib/audioDuration';
 import {
@@ -75,8 +79,26 @@ export async function GET() {
       return jsonError(STT_UNAVAILABLE, 503);
     }
     if (!grant) return jsonError('Not signed in', 401);
+
+    // Lane availability must reflect SPENDABILITY, not just configuration: a
+    // mic that 402s on every take is worse than no mic (review 2026-07-12).
+    // Report no lanes once the user's remaining credit can't cover one clip,
+    // or they've hit the daily dictation cap — the client renders no mic.
+    const lanes = availableSttModels();
+    let usable = lanes;
+    if (lanes.length > 0) {
+      const cheapest = Math.min(
+        ...STT_MODELS.filter((m) => lanes.some((l) => l.id === m.id)).map(estimateTranscribeUsd)
+      );
+      const [remaining, used] = await Promise.all([
+        remainingAllowanceUsd(session.sub, grant.allowanceUsd),
+        transcribesInLastDay(session.sub),
+      ]);
+      if (remaining < cheapest || used >= MAX_TRANSCRIBE_PER_DAY) usable = [];
+    }
+
     const payload: TranscribeStatus = {
-      models: availableSttModels(),
+      models: usable,
       maxSeconds: MAX_RECORD_SECONDS,
       maxBytes: MAX_CLIP_BYTES,
       maxPromptChars: MAX_STT_PROMPT_CHARS,
@@ -182,6 +204,22 @@ async function handle(request: Request) {
   const sniffedSeconds = sniffAudioDurationSeconds(buf, mime);
   if (sniffedSeconds !== null && sniffedSeconds > MAX_CLIP_SECONDS) {
     return jsonError(TOO_LONG_MESSAGE, 400);
+  }
+
+  // PER-USER DAILY CAP. The USD caps do not bound provider quota usefully: a
+  // user's $1/month buys ~9 hours of Groq audio, far more than the operator's
+  // whole shared free-tier quota — so without this, one user could exhaust the
+  // provider and deny dictation to everyone while staying inside their budget
+  // (review 2026-07-12). Checked before the reservation, after all validation.
+  try {
+    if ((await transcribesInLastDay(session.sub)) >= MAX_TRANSCRIBE_PER_DAY) {
+      return jsonError(
+        "You've reached today's dictation limit — you can keep typing, and it resets tomorrow.",
+        429
+      );
+    }
+  } catch {
+    return jsonError(STT_UNAVAILABLE, 503);
   }
 
   // METERING — reserve AFTER all validation above, so a 4xx can never consume

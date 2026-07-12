@@ -1,26 +1,33 @@
-// /lab/dictation — Lab experiment: the transcription playground. The
-// workbench for choosing which speech model the app should trust: record once,
-// transcribe the same clip on two lanes, diff them, and score a take against a
-// PACES sentence. (The mic in a real case lives at /lab/case.)
+// /lab/dictation — the transcription playground: the workbench that decides
+// which speech model the app trusts. Record once, transcribe the same clip on
+// two models side by side, and score a take against a set of PACES sentences.
 //
-// noindex: the page metadata's `robots` replaces the layout's wholesale for
-// this route; /lab/* is also absent from the sitemap and linked nowhere public.
+// This is the ONLY thing left of the Lab. Voice dictation itself graduated to
+// the main app on 2026-07-12 (the mic is beside Send at /), the /lab/case
+// trial page is retired (→ /), and the Lab hub is gone (/lab → here). The
+// playground stays because model choice is not a one-off decision: when a new
+// speech model appears, this is how it gets compared against the incumbent on
+// real PACES vocabulary and a real accent, rather than on a vendor benchmark.
+//
+// Unlisted and noindexed: the page metadata's `robots` replaces the layout's
+// wholesale for this route, an X-Robots-Tag header backs it up, the sitemap
+// never lists it, and nothing public links here.
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
-import LabBanner from '@/components/LabBanner';
 import LabPlayground from '@/components/LabPlayground';
 
 export const metadata: Metadata = {
-  title: 'Transcription playground — Lab',
+  title: 'Transcription playground',
   description: 'Compare speech-recognition models on PACES vocabulary.',
-  // Self-referencing — see the note in app/lab/page.tsx.
+  // Self-referencing — omitting this inherits the root layout's canonical="/",
+  // which would pair a noindex with a canonical pointing at the homepage.
   alternates: { canonical: '/lab/dictation' },
   robots: { index: false, follow: false },
 };
 
-export default function LabDictationPage() {
+export default function DictationPlaygroundPage() {
   return (
     <main className="min-h-dvh bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="mx-auto max-w-2xl px-6 py-10">
@@ -29,26 +36,21 @@ export default function LabDictationPage() {
           <span className="text-base font-semibold tracking-tight">PACES Buddy</span>
         </Link>
 
-        <p className="mt-8 text-xs text-zinc-400 dark:text-zinc-600">
-          <Link href="/lab" className="underline hover:text-teal-700 dark:hover:text-teal-300">
-            🧪 Lab
-          </Link>
-          {' / '}
-          <span>Transcription playground</span>
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Transcription playground</h1>
+        <h1 className="mt-8 text-2xl font-semibold tracking-tight">🧪 Transcription playground</h1>
 
-        <div className="mt-4">
-          <LabBanner />
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <strong>A workbench, not a feature.</strong> This page exists to compare speech models
+          against each other on real PACES vocabulary. Voice dictation itself now lives in the app
+          — sign in and you will find a microphone beside Send.
         </div>
 
         <p className="mt-4 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-          Speak, and see how well each speech model handles real PACES vocabulary. Tick{' '}
-          <strong>A/B</strong> to transcribe one recording on two models side by side — the
-          differing words are highlighted. The bias context below is fed to the model as the text
-          that supposedly preceded your speech: it is what makes it write
-          &ldquo;pan-systolic&rdquo; rather than &ldquo;pancystolic&rdquo;. Clear it and re-record
-          the same sentence to see the difference for yourself.
+          Record a take and see how each model handles clinical language. Tick <strong>A/B</strong>{' '}
+          to transcribe one recording on two models side by side — the differing words are
+          highlighted. The bias context below is fed to the model as the text that supposedly
+          preceded your speech: it is what makes it write &ldquo;pan-systolic&rdquo; rather than
+          &ldquo;pancystolic&rdquo;. Clear it and re-record the same sentence to see the difference
+          for yourself.
         </p>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
           <li>
@@ -75,12 +77,12 @@ export default function LabDictationPage() {
         </div>
 
         <p className="mt-10 border-t border-zinc-200 pt-4 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
-          <Link href="/lab" className="underline hover:text-teal-700 dark:hover:text-teal-300">
-            Back to the Lab
+          <Link href="/" className="underline hover:text-teal-700 dark:hover:text-teal-300">
+            Back to practising
           </Link>
           {' · '}
-          <Link href="/lab/case" className="underline hover:text-teal-700 dark:hover:text-teal-300">
-            Practise a case by voice
+          <Link href="/privacy" className="underline hover:text-teal-700 dark:hover:text-teal-300">
+            Privacy &amp; disclaimer
           </Link>
           {' · '}
           <span>build {process.env.NEXT_PUBLIC_BUILD_STAMP}</span>

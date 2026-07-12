@@ -28,7 +28,7 @@ const FAQ = [
   {
     question: 'Is my data safe?',
     answer:
-      'Short version: we store your account email and your study history (so it syncs across devices), your API key is never saved on our server, and there are no ads or third-party trackers. If you try voice dictation in the Lab, your recording passes through our server to a speech-recognition provider to be turned into text and is never stored by us. The long version is on the privacy & disclaimer page.',
+      'Short version: we store your account email and your study history (so it syncs across devices), your API key is never saved on our server, and there are no ads or third-party trackers. If you dictate, the recording is sent through our server to a speech provider (Groq) to be turned into text and is never stored by us — along with a couple of lines of the encounter already on your screen, so it spells clinical terms correctly. Either way, do not put real patient identifiers into the app. The long version is on the privacy & disclaimer page.',
   },
   {
     question: 'Can I trust the answers?',
@@ -48,10 +48,11 @@ export default function AboutPage() {
       <JsonLd data={faqPageLd(FAQ)} />
     <main className="min-h-dvh bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <Link href="/" className="flex w-fit items-center gap-2.5" aria-label="PACES Buddy — back to the app">
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
+        <a href="/" className="flex w-fit items-center gap-2.5" aria-label="PACES Buddy — back to the app">
           <Logo className="h-7 w-7" />
           <span className="text-base font-semibold tracking-tight">PACES Buddy</span>
-        </Link>
+        </a>
 
         <h1 className="mt-8 text-2xl font-semibold tracking-tight">About</h1>
 
@@ -75,8 +76,9 @@ export default function AboutPage() {
         <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
           <li>Pick one of 500+ name-free practice cases, or let the app pick at random.</li>
           <li>
-            Describe what you examine, ask, or say — findings are revealed manoeuvre by
-            manoeuvre, the way a real encounter unfolds.
+            Describe what you examine, ask, or say — by typing, or by speaking, if you are signed
+            in (tap the microphone and your words become text you can edit). Findings are revealed
+            manoeuvre by manoeuvre, the way a real encounter unfolds.
           </li>
           <li>
             Present your findings, take the viva, and get a structured marksheet across the seven
@@ -108,6 +110,7 @@ export default function AboutPage() {
           </li>
           <li>
             Developer? The app&apos;s code is open source (MIT) on{' '}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
             <a
               href="https://github.com/arthurjyong/paces-app"
               target="_blank"
@@ -136,9 +139,11 @@ export default function AboutPage() {
             <dd className="mt-1 text-zinc-600 dark:text-zinc-300">
               Short version: we store your account email and your study history (so it syncs
               across devices), your API key is never saved on our server, and there are no ads or
-              third-party trackers. If you try voice dictation in the Lab, your recording passes
-              through our server to a speech-recognition provider to be turned into text and is
-              never stored by us. The long version is on the{' '}
+              third-party trackers. If you dictate, the recording is sent through our server to a
+              speech provider (Groq) to be turned into text and is never stored by us — along with
+              a couple of lines of the encounter already on your screen, so it spells clinical
+              terms correctly. Either way, do not put real patient identifiers into the app. The
+              long version is on the{' '}
               <Link href="/privacy" className="underline hover:text-teal-700 dark:hover:text-teal-300">
                 privacy &amp; disclaimer
               </Link>{' '}
@@ -164,6 +169,7 @@ export default function AboutPage() {
 
         <h2 className="mt-8 text-base font-semibold">Contact</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
           <a
             href="mailto:hello@pacesbuddy.com"
             className="underline hover:text-teal-700 dark:hover:text-teal-300"
@@ -174,9 +180,10 @@ export default function AboutPage() {
         </p>
 
         <p className="mt-10 border-t border-zinc-200 pt-4 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
-          <Link href="/" className="underline hover:text-teal-700 dark:hover:text-teal-300">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
+          <a href="/" className="underline hover:text-teal-700 dark:hover:text-teal-300">
             Back to practising
-          </Link>
+          </a>
           {' · '}
           <Link href="/privacy" className="underline hover:text-teal-700 dark:hover:text-teal-300">
             Privacy &amp; disclaimer

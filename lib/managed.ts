@@ -535,6 +535,48 @@ export async function getManagedStatus(): Promise<ManagedStatus> {
   };
 }
 
+/**
+ * Per-user daily ceiling on dictation requests (review 2026-07-12). The USD
+ * caps alone do not bound this usefully: at Groq's list price a user's $1
+ * monthly allowance buys ~9 HOURS of audio — far more than the operator's
+ * entire shared free-tier quota (7,200 audio-seconds/hour, 2,000 requests/day
+ * across ALL users on one key). So one enthusiastic — or malicious — user
+ * could exhaust the provider quota and deny dictation to everybody, while
+ * staying comfortably inside their own budget. This cap is the bound that the
+ * money never was. 120 takes/day is far above real practice use (a full
+ * encounter is a handful of dictations) and far below the shared quota.
+ */
+export const MAX_TRANSCRIBE_PER_DAY = 120;
+
+/** Dictation requests this user has settled in the last 24h (indexed on
+ *  usage_events (user_id, ts DESC) — the ledger we already write). */
+export async function transcribesInLastDay(userId: string): Promise<number> {
+  const res = await query<{ n: string }>(
+    `SELECT count(*)::int AS n FROM usage_events
+     WHERE user_id = $1 AND action = 'transcribe' AND ts > now() - interval '24 hours'`,
+    [userId]
+  );
+  return Number(res.rows[0]?.n ?? 0);
+}
+
+/** Remaining allowance for this user in the CURRENT SGT month, in USD. Used to
+ *  hide the mic once dictation can no longer be paid for — a visible mic that
+ *  402s on every take is worse than no mic at all. */
+export async function remainingAllowanceUsd(
+  userId: string,
+  allowanceUsd: number
+): Promise<number> {
+  const res = await query<{ remaining: string }>(
+    `SELECT (allowance_usd - spent_usd - reserved_usd)::text AS remaining
+     FROM user_balances WHERE user_id = $1 AND period = $2`,
+    [userId, sgtMonth()]
+  );
+  // No row yet = nothing spent this month: the full allowance is available.
+  if (!res.rows[0]) return allowanceUsd;
+  const remaining = Number(res.rows[0].remaining);
+  return Number.isFinite(remaining) ? remaining : 0;
+}
+
 export type ReserveResult = 'ok' | 'user_cap' | 'global_cap';
 
 /**

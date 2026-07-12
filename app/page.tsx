@@ -51,7 +51,12 @@ export default function Page() {
           </nav>
         )}
       </div>
-      <HomeApp />
+      {/* Voice dictation GRADUATED from the Lab 2026-07-12: the mic sits beside
+          Send for every signed-in user. It renders only when a transcription
+          lane is reachable (i.e. signed in), so signed-out / BYOK users see the
+          composer exactly as before. The matching microphone Permissions-Policy
+          grant for "/" is in next.config.ts. */}
+      <HomeApp dictation />
       <JsonLd data={homeGraphLd()} />
     </>
   );

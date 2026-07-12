@@ -1,9 +1,9 @@
 'use client';
 
-// The microphone that sits beside Send in the practice composer (Lab
-// experiment 2: /lab/case). Tap → record → tap → the transcript is inserted
-// into the draft for you to edit before sending. Dictation, not conversation:
-// nothing is sent to the examiner until you press Send.
+// The microphone that sits beside Send in the practice composer. Tap → record
+// → tap → the transcript is inserted into the draft for you to edit before
+// sending. Dictation, not conversation: nothing reaches the examiner until you
+// press Send.
 //
 // Capture logic lives in useDictation (shared, hardened for iOS). This
 // component owns only the compact UI + the upload, and it builds the bias
@@ -28,9 +28,20 @@ interface Props {
    *  Send: otherwise the user sends an empty/partial draft and the transcript
    *  lands in the NEXT turn's box seconds later (review 2026-07-12). */
   onBusyChange?: (busy: boolean) => void;
+  /** Whether a transcription lane is actually reachable (i.e. the user is
+   *  signed in). The composer keys its LAYOUT off this, not off the dictation
+   *  flag: a signed-out user must not be told to "speak" by a placeholder when
+   *  no mic will ever appear for them. */
+  onAvailable?: (available: boolean) => void;
 }
 
-export default function ComposerMic({ onText, disabled, context, onBusyChange }: Props) {
+export default function ComposerMic({
+  onText,
+  disabled,
+  context,
+  onBusyChange,
+  onAvailable,
+}: Props) {
   const [modelId, setModelId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -53,16 +64,35 @@ export default function ComposerMic({ onText, disabled, context, onBusyChange }:
 
   useEffect(() => {
     let alive = true;
-    void fetchSttStatus().then((s) => {
+    // Can this browser record AT ALL? In-app webviews (WhatsApp, Facebook,
+    // some hospital MDM browsers) and older Safari have no MediaRecorder, and
+    // getUserMedia needs a secure context. Offering a mic there produces a
+    // button that can only ever fail (review 2026-07-12) — so treat it as
+    // unavailable, exactly like being signed out.
+    const canRecord =
+      typeof window !== 'undefined' &&
+      window.isSecureContext &&
+      typeof MediaRecorder !== 'undefined' &&
+      Boolean(navigator.mediaDevices?.getUserMedia);
+    // Don't even ask the server when the browser can't record. Resolving to a
+    // null lane through the same path keeps the state update asynchronous.
+    const probe = canRecord ? fetchSttStatus() : Promise.resolve({ error: 0 as const });
+    void probe.then((s) => {
       if (!alive) return;
-      // The registry's first lane is the default (Groq whisper-large-v3).
-      if ('models' in s && s.models.length > 0) setModelId(s.models[0].id);
-      else setModelId(null);
+      // The registry's first lane is the default (Groq whisper-large-v3). An
+      // empty list means signed out, no lane configured, or out of credit —
+      // the server decides; the client just renders nothing.
+      const id = 'models' in s && s.models.length > 0 ? s.models[0].id : null;
+      setModelId(id);
+      onAvailable?.(id !== null);
     });
     return () => {
       alive = false;
     };
-  }, []);
+    // NB: no onAvailable(false) on unmount. The composer unmounts on every
+    // "New case", and tearing the signal down would re-trigger the two-hop
+    // probe and make the composer visibly reflow each time.
+  }, [onAvailable]);
 
   const onClip = useCallback(
     async (clip: RecordedClip) => {

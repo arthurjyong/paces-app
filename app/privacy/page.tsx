@@ -18,10 +18,11 @@ export default function PrivacyPage() {
   return (
     <main className="min-h-dvh bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="mx-auto max-w-2xl px-6 py-10">
-        <Link href="/" className="flex w-fit items-center gap-2.5" aria-label="PACES Buddy — back to the app">
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
+        <a href="/" className="flex w-fit items-center gap-2.5" aria-label="PACES Buddy — back to the app">
           <Logo className="h-7 w-7" />
           <span className="text-base font-semibold tracking-tight">PACES Buddy</span>
-        </Link>
+        </a>
 
         <h1 className="mt-8 text-2xl font-semibold tracking-tight">Privacy &amp; disclaimer</h1>
 
@@ -47,16 +48,23 @@ export default function PrivacyPage() {
           </li>
         </ul>
 
-        <h2 className="mt-8 text-base font-semibold">Voice dictation (Lab)</h2>
+        <h2 className="mt-8 text-base font-semibold">Voice dictation</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-          The experimental voice dictation in the Lab records audio <em>only</em> while you hold a
-          take — you tap Record, and your browser asks your permission first. The clip passes
-          through our server to the speech-recognition provider you pick, which returns the text;
-          we never save or log the audio, and the transcript lands in your text box exactly like
-          typed text. The providers (Groq, or OpenAI via Vercel AI Gateway) may keep a copy of the
-          audio briefly for their own abuse monitoring — up to 30 days in OpenAI&apos;s case —
-          under their own policies, so treat dictation like any other cloud service and do not
-          speak real patient identifiers into it.
+          Signed-in users can dictate instead of typing. Audio is recorded <em>only</em> while a
+          take is running — you tap the microphone, and your browser asks your permission first;
+          nothing listens in the background. The clip passes through our server to{' '}
+          <strong>Groq</strong>, which turns it into text. We never save or log the audio, and the
+          transcript lands in your text box exactly like typed text, for you to edit before you
+          send it.
+        </p>
+        <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+          Two things are worth knowing. First, so the model spells clinical terms correctly, we
+          send <em>a short slice of the encounter already on your screen</em> along with the clip —
+          the last couple of lines you and the examiner have exchanged, plus a list of common exam
+          terms. Nothing hidden from you is ever sent. Second, Groq does not retain audio by
+          default, but may hold it for up to 30 days to investigate faults or abuse, under its own
+          policy. So treat it like any other cloud service:{' '}
+          <strong>do not put real patient identifiers into the app — spoken or typed.</strong>
         </p>
 
         <h2 className="mt-8 text-base font-semibold">Your API key</h2>
@@ -91,6 +99,7 @@ export default function PrivacyPage() {
 
         <h2 className="mt-8 text-base font-semibold">Contact</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
           <a
             href="mailto:hello@pacesbuddy.com"
             className="underline hover:text-teal-700 dark:hover:text-teal-300"
@@ -100,9 +109,10 @@ export default function PrivacyPage() {
         </p>
 
         <p className="mt-10 border-t border-zinc-200 pt-4 text-xs text-zinc-400 dark:border-zinc-800 dark:text-zinc-600">
-          <Link href="/" className="underline hover:text-teal-700 dark:hover:text-teal-300">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
+          <a href="/" className="underline hover:text-teal-700 dark:hover:text-teal-300">
             Back to practising
-          </Link>
+          </a>
           {' · '}
           <Link href="/about" className="underline hover:text-teal-700 dark:hover:text-teal-300">
             About

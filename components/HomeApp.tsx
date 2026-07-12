@@ -122,9 +122,9 @@ function retryNotice(entries: TranscriptEntry[], marksheet: MarkSheet | null): s
 }
 
 interface HomeAppProps {
-  /** Lab experiment 2 (/lab/case): show the voice-dictation mic in the
-   *  composer. The production app at / passes nothing, so its composer is
-   *  byte-for-byte unchanged. */
+  /** Offer voice dictation (mic beside Send). Set by the home route; the mic
+   *  itself only appears for users who can actually use it (signed in), so a
+   *  signed-out visitor's composer is unchanged. */
   dictation?: boolean;
 }
 
@@ -840,6 +840,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
           markUsage={markUsage}
           hasKey={hasKey}
           dictation={dictation}
+          managedActive={managedActive}
           keyNotice={keyMissingError}
           onBegin={begin}
           onSend={send}

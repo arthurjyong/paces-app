@@ -25,6 +25,25 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        // /lab/case was the Lab trial of voice dictation. It GRADUATED to the
+        // main app on 2026-07-12 (the mic is now beside Send at /), so the
+        // experiment page is retired — keeping a second copy of the whole
+        // practice app would just be two things to maintain and two places to
+        // diverge. Anyone holding the old link lands on the real thing.
+        source: "/lab/case",
+        destination: "/",
+        permanent: false,
+      },
+      {
+        // The Lab as a SECTION is closed (2026-07-12): its one experiment
+        // graduated, and the only thing left is the transcription playground —
+        // the workbench that picks which speech model the app trusts. So /lab
+        // is no longer a hub, it just goes to the tool that remains.
+        source: "/lab",
+        destination: "/lab/dictation",
+        permanent: false,
+      },
+      {
         source: "/:path*",
         has: [{ type: "host", value: "www.pacesbuddy.com" }],
         destination: "https://pacesbuddy.com/:path*",
@@ -70,16 +89,26 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // The ONLY route allowed to reach the microphone: the /lab voice-
-        // dictation experiment (2026-07-12). Scoped deliberately — the mic
-        // permission is granted per-ORIGIN by the browser, so once a user
-        // allows it here, an origin-wide `microphone=(self)` would let script
-        // on ANY page (the practice pane, the landing pages) open the mic;
-        // our CSP must carry script-src 'unsafe-inline' for Tailwind, so this
-        // header is the backstop that keeps that unreachable. Duplicate header
-        // keys are last-match-wins in Next, so this entry (declared after the
-        // catch-all above) overrides Permissions-Policy for /lab only, and
-        // must therefore restate the full directive list.
+        // Voice dictation graduated from the Lab to the main app (2026-07-12),
+        // so the practice route needs the microphone.
+        //
+        // The grant stays SCOPED to the routes that actually record, rather
+        // than going site-wide, and that is a deliberate security decision, not
+        // an oversight: the browser grants mic permission per-ORIGIN, so once a
+        // user allows it here, an origin-wide `microphone=(self)` would let
+        // script on ANY page of pacesbuddy.com open the mic — and our CSP must
+        // carry script-src 'unsafe-inline' for Tailwind, so this header is the
+        // backstop that keeps that unreachable. Every content page (/about,
+        // /privacy, the 16 landing pages) therefore keeps the catch-all's
+        // `microphone=()`. Duplicate header keys are last-match-wins in Next,
+        // so these entries override the catch-all and must restate the full
+        // directive list.
+        source: "/",
+        headers: [
+          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
+        ],
+      },
+      {
         source: "/lab/:path*",
         headers: [
           { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
