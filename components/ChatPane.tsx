@@ -84,6 +84,19 @@ export default function ChatPane({
     if (started && !pending) textareaRef.current?.focus();
   }, [started, pending]);
 
+  // Dictation composer only: the box starts at the same 44px height as the mic
+  // and Send buttons, then grows with the text (up to max-h-40, after which it
+  // scrolls). A fixed 2-row box left the row visually ragged and clipped the
+  // placeholder on a phone. Runs on every draft change — including the reset to
+  // '' after Send, which snaps it back to one row.
+  useEffect(() => {
+    if (!dictation) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft, dictation]);
+
   function submitDraft() {
     const text = draft.trim();
     // `dictating` blocks the Enter key too — not just the Send button — so a
@@ -300,7 +313,7 @@ export default function ChatPane({
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <textarea
               ref={textareaRef}
-              rows={2}
+              rows={dictation ? 1 : 2}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -310,8 +323,20 @@ export default function ChatPane({
                 }
               }}
               disabled={pending !== null}
-              placeholder="Describe what you examine, ask, or say… (Enter to send, Shift+Enter for a new line)"
-              className="max-h-40 min-h-[2.5rem] flex-1 resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-base leading-6 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:opacity-60 md:text-sm dark:border-zinc-700 dark:bg-zinc-950"
+              // Short on purpose: the single-row box is ~230px wide on a phone
+              // once the mic and Send take their share, so a longer string
+              // wraps to a second line and is clipped.
+              placeholder={
+                dictation
+                  ? 'Type or speak…'
+                  : 'Describe what you examine, ask, or say… (Enter to send, Shift+Enter for a new line)'
+              }
+              // With the mic present the box matches the buttons' 44px height
+              // and grows with the text (see the autosize effect above);
+              // without it, the original two-row composer is unchanged.
+              className={`max-h-40 flex-1 resize-none overflow-y-auto rounded-md border border-zinc-300 bg-white px-3 py-2 text-base leading-6 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:opacity-60 md:text-sm dark:border-zinc-700 dark:bg-zinc-950 ${
+                dictation ? 'min-h-11' : 'min-h-[2.5rem]'
+              }`}
             />
             {dictation && (
               <ComposerMic
