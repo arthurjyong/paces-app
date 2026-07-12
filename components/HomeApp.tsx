@@ -121,7 +121,14 @@ function retryNotice(entries: TranscriptEntry[], marksheet: MarkSheet | null): s
     : 'Encounter restored — the examiner had not yet replied to your last message. Press Retry to resend it.';
 }
 
-export default function HomeApp() {
+interface HomeAppProps {
+  /** Lab experiment 2 (/lab/case): show the voice-dictation mic in the
+   *  composer. The production app at / passes nothing, so its composer is
+   *  byte-for-byte unchanged. */
+  dictation?: boolean;
+}
+
+export default function HomeApp({ dictation }: HomeAppProps = {}) {
   // BYOK is Claude-only now, so a single key slot — kept at the historical
   // `paces.apiKey` localStorage key so existing users' keys survive.
   const [claudeKey, setClaudeKey] = useLocalStorage(LS_API_KEY, '');
@@ -832,6 +839,7 @@ export default function HomeApp() {
           marksheet={marksheet}
           markUsage={markUsage}
           hasKey={hasKey}
+          dictation={dictation}
           keyNotice={keyMissingError}
           onBegin={begin}
           onSend={send}

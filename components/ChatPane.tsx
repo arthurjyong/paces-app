@@ -5,10 +5,17 @@
 // divider), loading indicator, error notice, marksheet card, and the composer.
 
 import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { MarkSheet, PublicCase, TokenUsage } from '@/lib/types';
 import { BEGIN_MESSAGE, RichText, usageLine, type TranscriptEntry } from './shared';
 import MarksheetCard from './MarksheetCard';
+
+// Lazy: the whole dictation stack (recorder hook + glossaries + upload client)
+// is only fetched on the route that actually enables it (/lab/case). A static
+// import would ship it in the production home bundle as dead code — the
+// conditional render below is not tree-shakeable.
+const ComposerMic = dynamic(() => import('./ComposerMic'), { ssr: false });
 
 interface ChatPaneProps {
   publicCase: PublicCase | null;
@@ -20,6 +27,10 @@ interface ChatPaneProps {
   marksheet: MarkSheet | null;
   markUsage: TokenUsage | null;
   hasKey: boolean;
+  /** Lab experiment 2 (/lab/case): show the dictation mic beside Send. OFF in
+   *  the production app — graduating it there also needs the /lab-scoped
+   *  Permissions-Policy widened (see SPEC.md "Voice dictation"). */
+  dictation?: boolean;
   /** Guidance shown when hasKey is false — provider-aware, built by the parent
    *  (covers both "no key for this provider" and "managed access doesn't cover
    *  this model"). */
@@ -44,6 +55,7 @@ export default function ChatPane({
   marksheet,
   markUsage,
   hasKey,
+  dictation,
   keyNotice,
   onBegin,
   onSend,
@@ -54,6 +66,9 @@ export default function ChatPane({
   onReportCase,
 }: ChatPaneProps) {
   const [draft, setDraft] = useState('');
+  /** A take is recording or transcribing: hold Send, or the user fires an
+   *  empty draft and the words arrive in the next turn's box. */
+  const [dictating, setDictating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const started = entries.length > 0;
@@ -71,7 +86,9 @@ export default function ChatPane({
 
   function submitDraft() {
     const text = draft.trim();
-    if (!text || pending || !started) return;
+    // `dictating` blocks the Enter key too — not just the Send button — so a
+    // take in flight can't be sent out from under itself.
+    if (!text || pending || !started || dictating) return;
     setDraft('');
     onSend(text);
   }
@@ -296,11 +313,35 @@ export default function ChatPane({
               placeholder="Describe what you examine, ask, or say… (Enter to send, Shift+Enter for a new line)"
               className="max-h-40 min-h-[2.5rem] flex-1 resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-base leading-6 outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 disabled:opacity-60 md:text-sm dark:border-zinc-700 dark:bg-zinc-950"
             />
+            {dictation && (
+              <ComposerMic
+                disabled={pending !== null}
+                // Bias context: the case's visible specialty + the visible
+                // transcript. Never hidden case content (lib/sttPrompt.ts).
+                context={{
+                  specialty: publicCase?.meta.specialty,
+                  entries: entries.map((e) => ({ role: e.role, content: e.content })),
+                }}
+                onBusyChange={setDictating}
+                onText={(text) => {
+                  setDraft((d) => {
+                    const base = d.replace(/\s+$/, '');
+                    return base ? `${base} ${text}` : text;
+                  });
+                  textareaRef.current?.focus();
+                }}
+              />
+            )}
             <button
               type="button"
               onClick={submitDraft}
-              disabled={pending !== null || draft.trim().length === 0}
-              className="rounded-md bg-teal-700 px-4 py-2 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-teal-600 dark:hover:bg-teal-500"
+              disabled={pending !== null || dictating || draft.trim().length === 0}
+              // h-11 ONLY when the mic is present (it matches the mic's 44px
+              // tap target); the production composer keeps its original
+              // py-2 button, byte-for-byte.
+              className={`rounded-md bg-teal-700 px-4 text-sm font-medium text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-teal-600 dark:hover:bg-teal-500 ${
+                dictation ? 'h-11' : 'py-2'
+              }`}
             >
               Send
             </button>

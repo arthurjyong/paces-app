@@ -80,9 +80,12 @@ const nextConfig: NextConfig = {
         // keys are last-match-wins in Next, so this entry (declared after the
         // catch-all above) overrides Permissions-Policy for /lab only, and
         // must therefore restate the full directive list.
-        source: "/lab",
+        source: "/lab/:path*",
         headers: [
           { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
+          // Belt-and-braces with each Lab page's `robots` metadata: experiments
+          // must never surface in search, whatever they render.
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
       },
       {
