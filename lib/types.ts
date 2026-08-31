@@ -53,7 +53,12 @@ export interface Manifest {
  * filename-derived and non-spoiler but the client never uses it. Both stay
  * server-side.
  */
-export type PublicCaseMeta = Omit<CaseMeta, 'canonicalSlugs' | 'file'>;
+export type PublicCaseMeta = Omit<CaseMeta, 'canonicalSlugs' | 'file'> & {
+  /** true when THIS session may not open the case: past-exam recall without an
+   *  institutional sign-in (set per-request by /api/manifest; enforced
+   *  server-side by /api/case and /api/examiner, so it is display state only). */
+  locked?: boolean;
+};
 
 /** Manifest as served by GET /api/manifest — cases projected to PublicCaseMeta. */
 export interface PublicManifest {

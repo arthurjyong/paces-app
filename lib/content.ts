@@ -98,6 +98,16 @@ export function toPublicMeta(meta: CaseMeta): PublicCaseMeta {
   return pub;
 }
 
+/**
+ * Past-exam recall case (a real remembered sitting, e.g. "2025-03_NUH_Cycle1")
+ * vs a library-bank case ("LIB_*", built from published teaching material).
+ * Recalls are gated to institutional sign-ins (owner decision 2026-08-31) —
+ * the sitting id prefix is the single source of that distinction.
+ */
+export function isRecallCase(meta: Pick<CaseMeta, 'sitting'>): boolean {
+  return !meta.sitting.startsWith('LIB_');
+}
+
 let publicManifestCache: PublicManifest | null = null;
 
 /** The manifest as served to the client — every CaseMeta projected spoiler-safe. */

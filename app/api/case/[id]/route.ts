@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { ApiError, PublicCase } from '@/lib/types';
-import { getCaseMeta, getCaseStem, toPublicMeta } from '@/lib/content';
+import { getCaseMeta, getCaseStem, isRecallCase, toPublicMeta } from '@/lib/content';
+import { recallUnlocked } from '@/lib/managed';
+import { RECALL_LOCKED_ERROR } from '@/lib/tiers';
 
 export const runtime = 'nodejs';
 
@@ -19,6 +21,11 @@ export async function GET(
     if (!meta) {
       const body: ApiError = { error: 'Case not found' };
       return NextResponse.json(body, { status: 404, headers: CACHE_HEADERS });
+    }
+    // Recall-case gate: past-exam recalls need an institutional sign-in.
+    if (isRecallCase(meta) && !(await recallUnlocked())) {
+      const body: ApiError = { error: RECALL_LOCKED_ERROR };
+      return NextResponse.json(body, { status: 403, headers: CACHE_HEADERS });
     }
     // PublicCase is the ONLY case content the client may ever receive
     // (invariant 1): spoiler-free projected meta (no canonicalSlugs — they

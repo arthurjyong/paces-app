@@ -296,7 +296,11 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
 
   function pickRandom() {
     if (filtered.length === 0) return;
-    const pick = filtered[Math.floor(Math.random() * filtered.length)];
+    // Prefer cases this session can actually open; fall back to the full pool
+    // (all-locked filters still pick something — the server explains the lock).
+    const openable = filtered.filter((c) => !c.locked);
+    const pool = openable.length > 0 ? openable : filtered;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
     onSelect(pick.id);
   }
 
@@ -334,7 +338,8 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
                 c.id === selectedId
                   ? 'bg-teal-50 text-teal-800 dark:bg-teal-950/50 dark:text-teal-200'
                   : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-              }`}
+              } ${c.locked ? 'opacity-55' : ''}`}
+              title={c.locked ? 'Sign in with your hospital email to unlock past-exam recalls' : undefined}
             >
               {/* Title + the stable opaque case ID (#c0001…) — no encounter number
                   and no theme (kept to the filter, so browsing stays exam-blind).
@@ -343,6 +348,13 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
               <span className="min-w-0 flex-1 truncate">
                 {view === 'type' ? c.sittingLabel : c.displayTitle}
               </span>
+              {/* Recall gate: clicking still works — the server refuses with the
+                  sign-in guidance, so the lock is honest, not just cosmetic. */}
+              {c.locked && (
+                <span aria-label="Locked" className="shrink-0 text-xs" role="img">
+                  🔒
+                </span>
+              )}
               <span className="shrink-0 text-xs text-zinc-400 dark:text-zinc-500">#{c.caseCode}</span>
             </button>
           </li>
@@ -377,6 +389,11 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
             Random case
           </button>
         </div>
+        {manifest?.cases.some((c) => c.locked) && (
+          <p className="mb-2 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">
+            🔒 Past-exam recalls unlock with a hospital (institutional) email sign-in.
+          </p>
+        )}
         <div className="flex rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700" role="group" aria-label="Group cases by">
           {(
             [

@@ -236,6 +236,26 @@ export async function resolveTier(email: string): Promise<TierGrant | null> {
   return null;
 }
 
+/**
+ * The recall-case gate (owner decision 2026-08-31): past-exam recall cases
+ * unlock ONLY for a valid managed session whose tier resolves LIVE to
+ * institutional — regardless of which door (managed or BYOK) pays for the
+ * model call. Fails closed on any error. Development bypasses the gate for
+ * parity with the dryRun/devCli dev-only affordances (no managed door needed
+ * to work on recall cases locally).
+ */
+export async function recallUnlocked(): Promise<boolean> {
+  if (process.env.NODE_ENV === 'development') return true;
+  if (!managedEnabled()) return false;
+  const session = await readManagedSession();
+  if (!session) return false;
+  try {
+    return (await resolveTier(session.email))?.tier === 'institutional';
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // In-memory IP rate limiting (best-effort brake, ported from lib/demo.ts —
 // the durable per-email bound lives in otp_codes)

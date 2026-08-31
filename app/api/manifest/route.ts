@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { ApiError, PublicManifest } from '@/lib/types';
-import { getPublicManifest } from '@/lib/content';
+import { getPublicManifest, isRecallCase } from '@/lib/content';
+import { recallUnlocked } from '@/lib/managed';
 
 export const runtime = 'nodejs';
 
@@ -13,7 +14,14 @@ export async function GET() {
     // Projected manifest only — canonicalSlugs name the diagnosis and must
     // never reach the client (invariant 1).
     const manifest: PublicManifest = getPublicManifest();
-    return NextResponse.json(manifest, { headers: CACHE_HEADERS });
+    // Recall-case gate: without an institutional session, flag recall cases
+    // locked (display state — /api/case and /api/examiner enforce). Map to
+    // fresh objects: getPublicManifest() returns a shared cached object.
+    const unlocked = await recallUnlocked();
+    const body: PublicManifest = unlocked
+      ? manifest
+      : { ...manifest, cases: manifest.cases.map((c) => (isRecallCase(c) ? { ...c, locked: true } : c)) };
+    return NextResponse.json(body, { headers: CACHE_HEADERS });
   } catch (err) {
     // Never forward the raw error — ContentError messages name internal paths.
     console.error('[manifest] content error:', err instanceof Error ? err.message : 'unknown error');

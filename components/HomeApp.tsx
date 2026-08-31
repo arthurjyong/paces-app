@@ -139,6 +139,8 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
   // Case list + selection.
   const [manifest, setManifest] = useState<PublicManifest | null>(null);
   const [manifestError, setManifestError] = useState<string | null>(null);
+  /** true once any manifest fetch succeeded — refetch failures then keep the stale list. */
+  const manifestLoadedRef = useRef(false);
   const [publicCase, setPublicCase] = useState<PublicCase | null>(null);
   const [caseLoading, setCaseLoading] = useState(false);
 
@@ -346,7 +348,10 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
     };
   }, []);
 
-  // Fetch the manifest on load.
+  // Fetch the manifest on load, and refetch when the managed session's
+  // active/tier state changes — the server computes per-case `locked` flags
+  // from the session (recall gate), so an institutional sign-in/out must
+  // refresh them without a reload.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -354,15 +359,24 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
         const res = await fetch('/api/manifest');
         const data = await readJson(res);
         if (!res.ok) throw new Error(errorFrom(data, `Failed to load case list (${res.status})`));
-        if (!cancelled) setManifest(data as PublicManifest);
+        if (!cancelled) {
+          manifestLoadedRef.current = true;
+          setManifest(data as PublicManifest);
+          setManifestError(null);
+        }
       } catch (e) {
-        if (!cancelled) setManifestError(e instanceof Error ? e.message : 'Failed to load case list.');
+        // A failed REfetch must not hide an already-loaded list (CasePicker
+        // renders the error instead of the list): keep the stale manifest and
+        // surface the error only when there is nothing to show.
+        if (!cancelled && !manifestLoadedRef.current) {
+          setManifestError(e instanceof Error ? e.message : 'Failed to load case list.');
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [managedStatus?.active, managedStatus?.tier]);
 
   // Restore the autosaved encounter once the manifest settles (loaded OR
   // failed) — synchronous (the blob carries stem + a meta snapshot), so there

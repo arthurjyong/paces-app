@@ -41,6 +41,11 @@ export function isTier(value: unknown): value is Tier {
   return value === 'public' || value === 'institutional';
 }
 
+/** Error text of the recall-case gate, shared by /api/case and /api/examiner
+ *  (client-safe: shown to users verbatim). */
+export const RECALL_LOCKED_ERROR =
+  'Past-exam recall cases unlock with an institutional sign-in. Sign in with your hospital email (MOHH, cluster or hospital address) and try again.';
+
 /**
  * GET /api/auth/status response — the client's whole view of the managed
  * session. Deliberately does NOT include the spend meter: users are never told

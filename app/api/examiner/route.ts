@@ -57,18 +57,19 @@ import {
   type TokenUsage,
 } from '@/lib/types';
 import { PROVIDER_CONFIG } from '@/lib/providers';
-import { ContentError, getCaseImages, getCaseMeta } from '@/lib/content';
+import { ContentError, getCaseImages, getCaseMeta, isRecallCase } from '@/lib/content';
 import {
   managedEnabled,
   managedGatewayKey,
   readManagedSession,
+  recallUnlocked,
   reserveSpend,
   resolveTier,
   settleSpend,
   type TierGrant,
 } from '@/lib/managed';
 import { actualCallUsd, estimateCallUsd } from '@/lib/pricing';
-import { TIER_MODELS } from '@/lib/tiers';
+import { RECALL_LOCKED_ERROR, TIER_MODELS } from '@/lib/tiers';
 import { buildSystem } from '@/lib/prompt';
 import { searchKb } from '@/lib/kb';
 import { buildMarkSheet, extractJson, markInstruction } from '@/lib/marksheet';
@@ -453,6 +454,14 @@ export async function POST(request: Request) {
     // Invariant 3: manifest lookup only — never a path join from user input.
     const meta = getCaseMeta(caseId);
     if (!meta) return jsonError('Unknown caseId', 400);
+
+    // Recall-case gate: past-exam recalls need an institutional sign-in,
+    // regardless of which door (managed or BYOK) would pay for the call.
+    // Enforced here as well as in /api/case — the manifest's `locked` flag is
+    // display state only.
+    if (isRecallCase(meta) && !(await recallUnlocked())) {
+      return jsonError(RECALL_LOCKED_ERROR, 403);
+    }
 
     const model = body.model ?? DEFAULT_MODEL;
     // The model id doubles as the provider selector: an allowlisted model maps
