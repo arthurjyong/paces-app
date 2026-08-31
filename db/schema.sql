@@ -166,9 +166,9 @@ ON CONFLICT (domain) DO NOTHING;
 -- three clusters (SingHealth, NUHS, NHG) and their major hospitals (owner
 -- decision 2026-07-09: include all major SG hospitals, e.g. NTFGH, AH).
 -- Receiving the OTP at the domain IS the proof of affiliation. ⚠️ Owner-curated
--- — add/remove with a plain INSERT/DELETE, no redeploy. NB tiers are UNIFORM
--- right now (both get DeepSeek + US$1), so 'institutional' vs 'public' is just
--- bookkeeping (which emails may register free) until re-differentiated.
+-- — add/remove with a plain INSERT/DELETE, no redeploy. NB since 2026-08-31 the
+-- tiers differ: both get DeepSeek, but institutional has no monthly cap
+-- (lib/tiers.ts TIER_ALLOWANCE_USD) while public stays at US$1.
 INSERT INTO allowed_domains (domain, tier, note) VALUES
   ('mohh.com.sg',       'institutional', 'MOH Holdings'),
   ('moh.gov.sg',        'institutional', 'Ministry of Health'),

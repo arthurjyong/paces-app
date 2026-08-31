@@ -1,10 +1,11 @@
 // Managed-tier contract shared by client and server (client-safe: names,
 // caps, and model lists only — no keys, no URLs, no per-user data).
 //
-// The two tiers (kept in the schema for future differentiation, but as of
-// 2026-07-09 they are UNIFORM per the owner: every free/managed user gets
-// DeepSeek only, US$1, and the model name is NOT surfaced to them — "free
-// practice"). Which bucket an email falls in lives in the DATABASE
+// The two tiers share the model list (DeepSeek only, name NOT surfaced to
+// users — "free practice") but differ on allowance since 2026-08-31 (owner
+// decision): public US$1/month, institutional effectively uncapped — the
+// global MANAGED_DAILY_CAP_USD backstop is then their only spend gate.
+// Which bucket an email falls in lives in the DATABASE
 // (allowed_domains + email_overrides — owner-editable without a redeploy);
 // this module only fixes what each tier MEANS. A per-user override
 // (email_overrides.monthly_allowance_usd) is how the owner grants more to an
@@ -17,10 +18,13 @@ export const TIER_LABELS: Record<Tier, string> = {
   institutional: 'Institutional',
 };
 
-/** Default monthly USD credit per tier (email_overrides may raise it per user, on request). */
+/** Default monthly USD credit per tier (email_overrides may raise it per user, on request).
+ * institutional 9999 = "no monthly cap" (owner decision 2026-08-31): it must stay
+ * within user_balances.allowance_usd NUMERIC(8,4), and the global daily cap is
+ * unreachable long before it — do NOT use Infinity (unstorable in the column). */
 export const TIER_ALLOWANCE_USD: Record<Tier, number> = {
   public: 1,
-  institutional: 1,
+  institutional: 9999,
 };
 
 /**
