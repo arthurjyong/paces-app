@@ -199,11 +199,10 @@ export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPa
               }}
             >
               <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                Sign in with your email to practise free with DeepSeek AI, with your study history
-                synced across your devices. Built by residents in Singapore: Singapore
-                public-healthcare staff can sign in with their hospital or MOHH email for unlimited
-                practice and the past-exam recall cases. Want a smarter study partner? Add your own
-                Claude API key in Settings for a more advanced AI — your history still syncs.
+                Sign in with your email to practise free, with your history synced across devices.
+                Built by Singapore residents: Singapore public-healthcare staff get unlimited
+                practice and the past-exam recall cases with a hospital or MOHH email. Want a
+                stronger AI? Add your own Claude API key in Settings.
               </p>
               <input
                 type="email"
