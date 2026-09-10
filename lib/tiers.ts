@@ -44,7 +44,7 @@ export function isTier(value: unknown): value is Tier {
 /** Error text of the recall-case gate, shared by /api/case and /api/examiner
  *  (client-safe: shown to users verbatim). */
 export const RECALL_LOCKED_ERROR =
-  'Past-exam recall cases unlock with an institutional sign-in. Sign in with your hospital email (MOHH, cluster or hospital address) and try again.';
+  'Past-exam recall cases from Singapore sittings are available to Singapore public-healthcare staff. Sign in with your hospital or MOHH email and try again.';
 
 /**
  * GET /api/auth/status response — the client's whole view of the managed
@@ -61,4 +61,6 @@ export interface ManagedStatus {
   tier?: Tier;
   /** MODELS ids the session may run on the server key (tier-filtered) — used by the client to route the call, never displayed by model name */
   models?: string[];
+  /** true when the signed-in user has used at least 90% of this month's allowance (finite allowances only); never a dollar figure. */
+  creditLow?: boolean;
 }

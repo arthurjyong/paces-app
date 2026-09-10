@@ -160,6 +160,26 @@ export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPa
                   Free practice, with your study history synced across your devices.
                 </p>
               </div>
+              {status.creditLow && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-800 dark:bg-amber-950/40">
+                  <p className="text-xs leading-5 text-amber-800 dark:text-amber-200">
+                    You&apos;ve used about 90% of this month&apos;s free practice credit. PACES Buddy
+                    is a grassroots project built by residents in Singapore, with no grant funding
+                    yet, so the free tier is capped, sorry. If you work in Singapore public
+                    healthcare, sign in with your hospital or MOHH email instead: that gives
+                    unlimited practice and unlocks the past-exam recall cases from Singapore
+                    sittings. Everyone else: email{' '}
+                    <a
+                      href="mailto:hello@pacesbuddy.com"
+                      className="underline hover:text-amber-900 dark:hover:text-amber-100"
+                    >
+                      hello@pacesbuddy.com
+                    </a>{' '}
+                    and we&apos;ll raise your quota case by case, or add your own Claude API key in
+                    Settings. Credit resets on the 1st of each month.
+                  </p>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => void signOut()}
@@ -180,8 +200,10 @@ export default function AccountPanel({ status, onRefresh, onSignOut }: AccountPa
             >
               <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
                 Sign in with your email to practise free with DeepSeek AI, with your study history
-                synced across your devices. Want a smarter study partner? Add your own Claude API
-                key in Settings for a more advanced AI — your history still syncs.
+                synced across your devices. Built by residents in Singapore: Singapore
+                public-healthcare staff can sign in with their hospital or MOHH email for unlimited
+                practice and the past-exam recall cases. Want a smarter study partner? Add your own
+                Claude API key in Settings for a more advanced AI — your history still syncs.
               </p>
               <input
                 type="email"

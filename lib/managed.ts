@@ -546,12 +546,28 @@ export async function getManagedStatus(): Promise<ManagedStatus> {
   if (!grant) return { active: false };
 
   await ensureBalance(session.sub, sgtMonth(), grant.allowanceUsd);
+
+  // "Credit low" signal: true once a finite-allowance user has used ≥90% of
+  // this month's allowance (9999 is the "no cap" sentinel in lib/tiers.ts — no
+  // signal for uncapped tiers). A boolean only, NEVER a dollar figure (owner
+  // decision). A query failure must never break status — treat as not low.
+  let creditLow = false;
+  if (grant.allowanceUsd < 9999) {
+    try {
+      const remaining = await remainingAllowanceUsd(session.sub, grant.allowanceUsd);
+      creditLow = remaining <= grant.allowanceUsd * 0.1;
+    } catch {
+      creditLow = false;
+    }
+  }
+
   return {
     active: true,
     id: opaqueUserId(session.sub),
     email: maskEmail(session.email),
     tier: grant.tier,
     models: [...TIER_MODELS[grant.tier]],
+    ...(creditLow ? { creditLow: true } : {}),
   };
 }
 

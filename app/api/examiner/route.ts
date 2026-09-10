@@ -637,7 +637,7 @@ export async function POST(request: Request) {
       }
       if (reserved.result === 'user_cap') {
         return jsonError(
-          "You've used up your free practice credit. To request more, contact the app owner — or add your own Claude API key in Settings to keep practising for free.",
+          "You've used up this month's free practice credit. PACES Buddy is a grassroots project built by residents in Singapore, with no grant funding yet, so the free tier is capped, sorry. If you work in Singapore public healthcare, sign in with your hospital or MOHH email instead: that gives unlimited practice and unlocks the past-exam recall cases from Singapore sittings. Everyone else: email hello@pacesbuddy.com and we'll raise your quota case by case, or add your own Claude API key in Settings. Credit resets on the 1st of each month.",
           402
         );
       }

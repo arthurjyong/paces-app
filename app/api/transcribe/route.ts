@@ -234,7 +234,7 @@ async function handle(request: Request) {
   }
   if (reserved.result === 'user_cap') {
     return jsonError(
-      "You've used up your free practice credit. To request more, contact the app owner.",
+      "You've used up this month's free practice credit, so dictation is paused. If you work in Singapore public healthcare, sign in with your hospital or MOHH email instead for unlimited practice. Everyone else: email hello@pacesbuddy.com and we'll raise your quota case by case. Credit resets on the 1st of each month.",
       402
     );
   }

@@ -339,7 +339,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
                   ? 'bg-teal-50 text-teal-800 dark:bg-teal-950/50 dark:text-teal-200'
                   : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
               } ${c.locked ? 'opacity-55' : ''}`}
-              title={c.locked ? 'Sign in with your hospital email to unlock past-exam recalls' : undefined}
+              title={c.locked ? 'Sign in with your Singapore hospital or MOHH email to unlock past-exam recalls' : undefined}
             >
               {/* Title + the stable opaque case ID (#c0001…) — no encounter number
                   and no theme (kept to the filter, so browsing stays exam-blind).
@@ -391,7 +391,7 @@ export default function CasePicker({ manifest, manifestError, selectedId, onSele
         </div>
         {manifest?.cases.some((c) => c.locked) && (
           <p className="mb-2 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">
-            🔒 Past-exam recalls unlock with a hospital (institutional) email sign-in.
+            🔒 Past-exam recalls from Singapore sittings unlock when Singapore public-healthcare staff sign in with a hospital or MOHH email.
           </p>
         )}
         <div className="flex rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700" role="group" aria-label="Group cases by">
