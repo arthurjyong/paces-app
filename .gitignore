@@ -58,3 +58,28 @@ next-env.d.ts
 # Neon CLI agent-skill install artifacts (not app code)
 .agents/
 skills-lock.json
+
+# ---------------------------------------------------------------------------
+# RESEARCH / GRANT / STUDY MATERIAL — NEVER COMMIT (owner instruction 2026-07-22)
+# This repo is PUBLIC. The literature review, grant applications, study protocol,
+# IRB paperwork, participant/consent records, survey exports and any analysis of
+# user data must never reach GitHub. Keep them OUTSIDE this directory (the PACES
+# root and Work/Inbox are not git repos); these patterns are belt-and-braces in
+# case something is ever created in here by mistake.
+/research/
+/study/
+/grant*/
+/irb/
+/analysis/
+/data/
+*_PROTOCOL*
+*_LIT-REVIEW*
+*_LITERATURE*
+*PAPERS_TO_DOWNLOAD*
+*PACES-APP_*
+*_consent*
+*_participants*
+*_survey_export*
+*.ipynb
+*.sav
+*.dta
