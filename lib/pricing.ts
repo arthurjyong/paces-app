@@ -4,8 +4,13 @@
 // periodic reconciliation only (plan §7).
 //
 // Prices are the gateway's zero-markup list prices, USD per MILLION tokens,
-// verified on the gateway models API 2026-07-09 (see lib/types.ts MODELS).
+// re-verified on the gateway models API 2026-09-28 (see lib/types.ts MODELS).
 // Rules:
+// - Peak pricing: DeepSeek V4 Pro doubles its list prices (peakMultiplier 2)
+//   Monday to Friday during UTC minutes-of-day 60 to 240 and 360 to 600 (that
+//   is 01:00 to 04:00 and 06:00 to 10:00 UTC). Both actualCallUsd and
+//   estimateCallUsd scale by peakMultiplier() for the moment of the call, so
+//   reserve and settle use the same rate and the ledger stops under-counting.
 // - DeepSeek V4 Pro on the gateway has thinking ALWAYS ON and bills reasoning
 //   as output — response.usage.output_tokens already includes it, so the
 //   SETTLE side needs no special casing; only the reserve ESTIMATE inflates
@@ -25,6 +30,8 @@ interface ModelPricing {
   cacheWritePerM: number;
   /** reserve-estimate multiplier on max_tokens for always-on-reasoning models */
   reasoningFactor: number;
+  /** peak-hour price multiplier (DeepSeek doubles Mon-Fri peak windows); absent = never peaks */
+  peakMultiplier?: number;
 }
 
 /** Keyed by MODELS registry id. Only managed (gateway) models belong here. */
@@ -37,11 +44,12 @@ const PRICING: Record<string, ModelPricing> = {
     reasoningFactor: 1,
   },
   'deepseek/deepseek-v4-pro': {
-    inputPerM: 0.435,
-    outputPerM: 0.87,
-    cacheReadPerM: 0.0435,
-    cacheWritePerM: 0.435,
+    inputPerM: 0.66,
+    outputPerM: 1.98,
+    cacheReadPerM: 0.022,
+    cacheWritePerM: 0.66,
     reasoningFactor: 2.5,
+    peakMultiplier: 2,
   },
 };
 
@@ -49,17 +57,39 @@ export function isMeteredModel(model: string): boolean {
   return model in PRICING;
 }
 
+/**
+ * Peak-hour price multiplier for `model` at instant `at`. DeepSeek doubles its
+ * list prices Monday to Friday during UTC minutes-of-day 60 to 240 and 360 to
+ * 600 (both inclusive, as the gateway defines the windows). Returns the entry's
+ * peakMultiplier inside a window, else 1, including 1 for any model with no
+ * peakMultiplier field. (getUTCDay: 0 = Sunday, 6 = Saturday.)
+ */
+export function peakMultiplier(model: string, at: Date = new Date()): number {
+  const p = PRICING[model];
+  if (!p || !p.peakMultiplier) return 1;
+  const day = at.getUTCDay();
+  if (day < 1 || day > 5) return 1;
+  const minute = at.getUTCHours() * 60 + at.getUTCMinutes();
+  const inPeak =
+    (minute >= 60 && minute <= 240) || (minute >= 360 && minute <= 600);
+  return inPeak ? p.peakMultiplier : 1;
+}
+
 /** Actual USD for a settled call, from real response usage. */
-export function actualCallUsd(model: string, usage: TokenUsage): number {
+export function actualCallUsd(
+  model: string,
+  usage: TokenUsage,
+  at: Date = new Date()
+): number {
   const p = PRICING[model];
   if (!p) throw new Error(`No price entry for model ${model}`);
-  return (
+  const base =
     (usage.inputTokens * p.inputPerM +
       usage.outputTokens * p.outputPerM +
       usage.cacheReadTokens * p.cacheReadPerM +
       usage.cacheWriteTokens * p.cacheWritePerM) /
-    1_000_000
-  );
+    1_000_000;
+  return base * peakMultiplier(model, at);
 }
 
 /**
@@ -87,15 +117,19 @@ const MAX_CHAT_UPSTREAM_CALLS = 4; // 1 + MAX_TOOL_ITERATIONS(3)
  *   later call it still can't exceed this),
  * - transcript (chars/3.5, English prose lower bound) at the input rate per call,
  * - output = max_tokens (chat 1500 / mark 2500) × reasoningFactor per call,
- * - all × the call count (chat 4, mark 1), +10% headroom, floored at $0.005.
+ * - all × the call count (chat 4, mark 1), × peakMultiplier, +10% headroom,
+ *   floored at $0.005.
  * This over-reserves an in-flight call (settle immediately releases down to the
  * REAL cost via actualCallUsd), so a single serialized user barely notices; the
- * payoff is that the cap can never be overshot by an admitted call.
+ * payoff is that the cap can never be overshot by an admitted call. The reserve
+ * is taken seconds before the upstream call, so peakMultiplier at `at` matches
+ * what settle will charge, no double-reserve.
  */
 export function estimateCallUsd(
   model: string,
   action: 'chat' | 'mark',
-  transcriptChars: number
+  transcriptChars: number,
+  at: Date = new Date()
 ): number {
   const p = PRICING[model];
   if (!p) throw new Error(`No price entry for model ${model}`);
@@ -108,5 +142,8 @@ export function estimateCallUsd(
       transcriptTokens * p.inputPerM +
       outputTokens * p.outputPerM) /
     1_000_000;
-  return Math.max(perCallUsd * calls * 1.1, 0.005);
+  return Math.max(
+    perCallUsd * calls * peakMultiplier(model, at) * 1.1,
+    0.005
+  );
 }
