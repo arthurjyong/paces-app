@@ -21,9 +21,10 @@ export const TIER_LABELS: Record<Tier, string> = {
 /** Default monthly USD credit per tier (email_overrides may raise it per user, on request).
  * institutional 9999 = "no monthly cap" (owner decision 2026-08-31): it must stay
  * within user_balances.allowance_usd NUMERIC(8,4), and the global daily cap is
- * unreachable long before it — do NOT use Infinity (unstorable in the column). */
+ * unreachable long before it — do NOT use Infinity (unstorable in the column).
+ * public raised to 1.5 on 2026-09-29 (owner decision, from 1). */
 export const TIER_ALLOWANCE_USD: Record<Tier, number> = {
-  public: 1,
+  public: 1.5,
   institutional: 9999,
 };
 

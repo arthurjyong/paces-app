@@ -42,7 +42,7 @@ Your tier is decided by your email domain:
 
 | Tier | Who qualifies | Free practice | Allowance |
 |---|---|---|---|
-| **Public** | Major consumer email providers (gmail.com, outlook.com, yahoo.com, icloud.com, …) | Free practice | US$1 / month |
+| **Public** | Major consumer email providers (gmail.com, outlook.com, yahoo.com, icloud.com, …) | Free practice | US$1.50 / month |
 | **Institutional** | Approved SG-healthcare domains (mohh.com.sg, singhealth.com.sg, nuhs.edu.sg, nhg.com.sg, and major hospitals incl. NTFGH, AH, …) | Free practice | US$1 / month |
 
 Both tiers are the same today — free practice on the app's allowance, US$1 / month; the two names only decide which emails may register (consumer vs SG-healthcare domains) and are kept for possible future differentiation. Any other domain (unknown, disposable, personal) can't use the managed door — BYOK still works for everyone. Allowances are per-user USD spend caps per **calendar month, Singapore time**, metered against the app's own ledger; per-address exceptions (a different tier, or a custom allowance) go in `email_overrides`.

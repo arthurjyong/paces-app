@@ -172,7 +172,7 @@ Purpose: let anyone with an eligible email practise on the **server-held, metere
 
 | Tier | Eligibility | `TIER_MODELS` | `TIER_ALLOWANCE_USD` |
 |---|---|---|---|
-| `public` | major consumer email domains (gmail.com, outlook.com, yahoo.com, icloud.com, … — a curated ALLOW-list, which blocks disposable-domain farming better than any deny-list) | `deepseek/deepseek-v4-pro` only | US$1 / calendar month |
+| `public` | major consumer email domains (gmail.com, outlook.com, yahoo.com, icloud.com, … — a curated ALLOW-list, which blocks disposable-domain farming better than any deny-list) | `deepseek/deepseek-v4-pro` only | US$1.50 / calendar month |
 | `institutional` | approved SG-healthcare domains (mohh.com.sg, moh.gov.sg, the SingHealth / NUHS / NHG cluster domains and major hospitals incl. NTFGH, AH, … — receiving the OTP at the domain IS the proof of affiliation) | `deepseek/deepseek-v4-pro` only | US$1 / calendar month |
 
 Since the 2026-07-09 simplification the two tiers are FUNCTIONALLY IDENTICAL — both get DeepSeek V4 Pro only and US$1 / calendar month (`TIER_MODELS` both = `['deepseek/deepseek-v4-pro']`, `TIER_ALLOWANCE_USD` both = 1). The two names are kept in the schema purely as bookkeeping for FUTURE differentiation; today they only decide which emails may register on the free door (consumer vs SG-healthcare domains). Institutional no longer gets Claude Sonnet and the cap is no longer US$2.
