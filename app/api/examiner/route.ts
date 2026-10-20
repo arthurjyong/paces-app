@@ -243,10 +243,25 @@ interface CallOpts {
   forcedToolChoice: boolean;
   /** send thinking:{type:'disabled'} — for endpoints where it defaults ON */
   thinkingOff: boolean;
+  /**
+   * DeepSeek on the gateway only: prefer DeepSeek's own host (the cheapest of
+   * the six serving the model; the others cost about 2 to 4x per case) and send
+   * the forced-tool marking call with thinking disabled. DeepSeek's host
+   * rejects a forced tool_choice in thinking mode ("Thinking mode does not
+   * support this tool_choice"), so the gateway silently fell back to a dearer
+   * host for nearly every marking call, at about 3x the ledger price and
+   * already without thinking.
+   */
+  deepseekGatewayPin: boolean;
 }
 
 function thinkingParam(opts: CallOpts): { thinking?: { type: 'disabled' } } {
   return opts.thinkingOff ? { thinking: { type: 'disabled' } } : {};
+}
+
+/** Gateway request-body extension (not in the SDK's types) for the DeepSeek host pin. */
+function routingParam(opts: CallOpts): { providerOptions?: { gateway: { order: string[] } } } {
+  return opts.deepseekGatewayPin ? { providerOptions: { gateway: { order: ['deepseek'] } } } : {};
 }
 
 /**
@@ -277,8 +292,9 @@ async function runChat(
   const usage = emptyUsage();
   const textParts: string[] = [];
   let kbLookups = 0;
+  const startedAt = Date.now();
 
-  const call = () =>
+  const call = (override: { thinking?: { type: 'disabled' } } = {}) =>
     client.messages.create({
       model,
       max_tokens: 1500,
@@ -286,6 +302,8 @@ async function runChat(
       messages,
       tools: [SEARCH_KB_TOOL],
       ...thinkingParam(opts),
+      ...routingParam(opts),
+      ...override,
     });
 
   let response = await call();
@@ -314,6 +332,24 @@ async function runChat(
     messages.push({ role: 'user', content: results });
 
     response = await call();
+    accumulateUsage(usage, response.usage);
+    for (const block of response.content) {
+      if (block.type === 'text' && block.text) textParts.push(block.text);
+    }
+  }
+
+  // DeepSeek can spend the whole max_tokens budget thinking on a long turn
+  // (typically the final debrief) and return no text at all, so every retry
+  // failed the same way. Retry that turn once with thinking off, while there is
+  // still time inside maxDuration. Thinking stays on everywhere else: in testing,
+  // DeepSeek without it gave away hidden brief content to extraction attempts.
+  if (
+    opts.deepseekGatewayPin &&
+    response.stop_reason === 'max_tokens' &&
+    textParts.length === 0 &&
+    Date.now() - startedAt < 35_000
+  ) {
+    response = await call({ thinking: { type: 'disabled' } });
     accumulateUsage(usage, response.usage);
     for (const block of response.content) {
       if (block.type === 'text' && block.text) textParts.push(block.text);
@@ -377,6 +413,8 @@ async function runMark(
       tools: [SUBMIT_MARKSHEET_TOOL],
       tool_choice: { type: 'tool', name: 'submit_marksheet' },
       ...thinkingParam(opts),
+      ...(opts.deepseekGatewayPin ? { thinking: { type: 'disabled' as const } } : {}),
+      ...routingParam(opts),
     });
     accumulateUsage(usage, response.usage);
     lastResponseId = response.id;
@@ -607,6 +645,7 @@ export async function POST(request: Request) {
       revealReminder: providerCfg.revealReminder,
       forcedToolChoice: providerCfg.forcedToolChoice,
       thinkingOff: providerCfg.thinkingOff,
+      deepseekGatewayPin: provider === 'gateway' && model.startsWith('deepseek/'),
     };
 
     // METERING — managed path only (never BYOK, never the dev CLI, and dryRun

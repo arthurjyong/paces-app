@@ -83,6 +83,11 @@ async function runCli(
     '--tools',
     '',
     '--no-session-persistence',
+    // Load no settings sources, so the developer's CLAUDE.md files and memory
+    // stay out of the examiner's context (--system-prompt alone does not stop
+    // them loading; checked 20 Oct 2026).
+    '--setting-sources',
+    '',
     '--system-prompt',
     systemPrompt,
   ];
