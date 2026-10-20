@@ -36,13 +36,18 @@ CREATE TABLE IF NOT EXISTS allowed_domains (
 -- Per-address grants outside the domain lists (e.g. the pre-Phase-1 invited
 -- users, whose gmail addresses would otherwise demote to the public tier).
 -- monthly_allowance_usd NULL = the tier's default cap.
+-- expires_at NULL = no end date; once it passes, resolveTier ignores the row
+-- and the address falls back to its domain row (time-limited raises).
 CREATE TABLE IF NOT EXISTS email_overrides (
   email TEXT PRIMARY KEY,
   tier TEXT NOT NULL CHECK (tier IN ('public', 'institutional')),
   monthly_allowance_usd NUMERIC(8, 4),
   note TEXT,
-  added_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ
 );
+-- Databases created before expires_at existed (added 2026-10-20) get it here.
+ALTER TABLE email_overrides ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
 -- One row per issued 6-digit code. Codes are stored as HMAC-SHA256 hashes
 -- (never plaintext); single-use (consumed_at), ~10 min expiry, and at most 5

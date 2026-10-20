@@ -214,10 +214,13 @@ export interface TierGrant {
  * first (with its optional custom allowance), else the domain allow-lists,
  * else null (BYOK only). Checked at OTP request, OTP verify, AND every
  * examiner call — the DB rows are the single source of authorization.
+ * An override whose optional expires_at has passed is ignored, so a
+ * time-limited raise lapses by itself and the address falls back to its
+ * domain row.
  */
 export async function resolveTier(email: string): Promise<TierGrant | null> {
   const override = await query<{ tier: string; monthly_allowance_usd: string | null }>(
-    'SELECT tier, monthly_allowance_usd FROM email_overrides WHERE email = $1',
+    'SELECT tier, monthly_allowance_usd FROM email_overrides WHERE email = $1 AND (expires_at IS NULL OR expires_at > now())',
     [email]
   );
   if (override.rows[0] && isTier(override.rows[0].tier)) {

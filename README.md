@@ -61,6 +61,10 @@ DELETE FROM allowed_domains WHERE domain = 'ah.com.sg';
 -- Grant one address institutional access with a custom monthly allowance (USD):
 INSERT INTO email_overrides (email, tier, monthly_allowance_usd, note) VALUES ('colleague@gmail.com', 'institutional', 5, 'study partner')
 ON CONFLICT (email) DO UPDATE SET tier = EXCLUDED.tier, monthly_allowance_usd = EXCLUDED.monthly_allowance_usd, note = EXCLUDED.note;
+
+-- Raise one address for a set period (ignored once expires_at passes; the address then falls back to its domain row):
+INSERT INTO email_overrides (email, tier, monthly_allowance_usd, note, expires_at) VALUES ('candidate@gmail.com', 'public', 3, 'two-month raise', '2026-12-21 00:00+08')
+ON CONFLICT (email) DO UPDATE SET monthly_allowance_usd = EXCLUDED.monthly_allowance_usd, note = EXCLUDED.note, expires_at = EXCLUDED.expires_at;
 ```
 
 **Setup runbook** (the whole feature is off — and the app BYOK-only — until all of this is in place; see `.env.example` for the annotated variable list):
