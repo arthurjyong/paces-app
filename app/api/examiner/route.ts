@@ -23,9 +23,11 @@
 // - Metering is reserve-then-settle (lib/managed.ts): the estimate is reserved
 //   only AFTER all request validation (a 400 can never consume allowance), and
 //   every exit path settles exactly once — success moves the REAL usage cost
-//   into spent (clamped at the reservation; the ledger keeps the true cost),
-//   any failure releases the reservation uncharged (try/finally — no path may
-//   leak a reservation).
+//   into spent (clamped at the reservation; the ledger keeps the true cost);
+//   a failure is charged the same way for whatever its completed upstream
+//   calls used (the provider billed them), and releases the reservation
+//   uncharged when no call completed (try/finally — no path may leak a
+//   reservation).
 // - Error payloads are spoiler-free: upstream provider errors are mapped to
 //   fixed generic strings; assembled prompts never appear in errors
 //   (invariant 1). DB/driver error text is likewise never forwarded — a
@@ -182,6 +184,24 @@ function accumulateUsage(total: TokenUsage, usage: Usage): void {
   total.cacheWriteTokens += usage.cache_creation_input_tokens ?? 0;
 }
 
+/**
+ * Every upstream response a request has completed so far, kept OUTSIDE the
+ * action's own result: runChat and runMark add each response as it arrives, so
+ * when the request then fails (an error inside the tool loop, an empty reply,
+ * an unreadable marksheet, an upstream throw) the handler's finally can still
+ * charge what the provider billed instead of dropping it.
+ */
+interface UsageTracker {
+  usage: TokenUsage;
+  /** id of the last completed upstream response (the settle's idempotency key) */
+  lastResponseId: string | null;
+}
+
+function recordResponse(tracker: UsageTracker, response: { id: string; usage: Usage }): void {
+  accumulateUsage(tracker.usage, response.usage);
+  tracker.lastResponseId = response.id;
+}
+
 /** The request's upstream deadline (UPSTREAM_DEADLINE_MS) is too close to start another call. */
 class ExaminerDeadlineError extends Error {
   constructor() {
@@ -328,7 +348,8 @@ async function runChat(
   system: string | TextBlockParam[],
   transcript: ChatMessage[],
   images: CaseImage[],
-  opts: CallOpts
+  opts: CallOpts,
+  tracker: UsageTracker
 ): Promise<ChatResult | { error: string; status: number }> {
   const messages: MessageParam[] = transcript.map((m) => ({ role: m.role, content: m.content }));
   const last = messages[messages.length - 1];
@@ -357,6 +378,7 @@ async function runChat(
 
   let response = await call();
   accumulateUsage(usage, response.usage);
+  recordResponse(tracker, response);
   for (const block of response.content) {
     if (block.type === 'text' && block.text) textParts.push(block.text);
   }
@@ -382,6 +404,7 @@ async function runChat(
 
     response = await call();
     accumulateUsage(usage, response.usage);
+    recordResponse(tracker, response);
     for (const block of response.content) {
       if (block.type === 'text' && block.text) textParts.push(block.text);
     }
@@ -402,6 +425,7 @@ async function runChat(
   ) {
     response = await call({ thinking: { type: 'disabled' } });
     accumulateUsage(usage, response.usage);
+    recordResponse(tracker, response);
     for (const block of response.content) {
       if (block.type === 'text' && block.text) textParts.push(block.text);
     }
@@ -436,7 +460,8 @@ async function runMark(
   system: string | TextBlockParam[],
   transcript: ChatMessage[],
   meta: CaseMeta,
-  opts: CallOpts
+  opts: CallOpts,
+  tracker: UsageTracker
 ): Promise<MarkResult | { error: string; status: number }> {
   const usage = emptyUsage();
   // Marking is a single upstream call either way — its id keys the settle.
@@ -471,6 +496,7 @@ async function runMark(
       deadlineSignal(opts.deadlineAt)
     );
     accumulateUsage(usage, response.usage);
+    recordResponse(tracker, response);
     lastResponseId = response.id;
     const toolUse = response.content.find(
       (b) => b.type === 'tool_use' && b.name === 'submit_marksheet'
@@ -498,6 +524,7 @@ async function runMark(
       deadlineSignal(opts.deadlineAt)
     );
     accumulateUsage(usage, response.usage);
+    recordResponse(tracker, response);
     lastResponseId = response.id;
     const text = response.content
       .filter((b) => b.type === 'text')
@@ -712,8 +739,9 @@ export async function POST(request: Request) {
     // returned long ago). Reserve-then-settle (lib/managed.ts): the estimate
     // is reserved here, AFTER every request validation above, so a 400 can
     // never consume allowance. `openReservation` is the settle obligation —
-    // cleared by the success settle, released uncharged by the finally on
-    // every other exit. Cap refusals are pre-call: nothing was reserved, so
+    // cleared by the success settle; on every other exit the finally charges
+    // what the completed upstream calls used, or releases it uncharged when
+    // none completed. Cap refusals are pre-call: nothing was reserved, so
     // there is nothing to settle.
     // The reservation carries the exact period/day it was booked against, so
     // the settle updates the SAME meter rows even if the call crosses an SGT
@@ -754,16 +782,21 @@ export async function POST(request: Request) {
       };
     }
 
+    // Every upstream response this request completes, success or not (see
+    // UsageTracker): the finally charges it when the request fails.
+    const tracker: UsageTracker = { usage: emptyUsage(), lastResponseId: null };
+
     /**
-     * Success-path settle: move the reservation into real spend at the ACTUAL
-     * cost from our own price table, keyed idempotent on the last upstream
-     * response id, against the reservation's own period/day. The balances are
-     * charged at most the reservation (the clamp keeps the allowance and the
-     * daily cap hard bounds); the ledger row keeps the true cost. settleSpend
-     * never throws (it logs), so the meter can never turn a delivered examiner
-     * reply into a user-facing error.
+     * Settle the reservation as real spend at the ACTUAL cost of `usage` from
+     * our own price table, keyed idempotent on the last upstream response id,
+     * against the reservation's own period/day. The balances are charged at
+     * most the reservation (the clamp keeps the allowance and the daily cap
+     * hard bounds); the ledger row keeps the true cost. Used by the success
+     * path and, for a failed request whose upstream calls billed tokens, by the
+     * finally. settleSpend never throws (it logs), so the meter can never turn
+     * a delivered examiner reply into a user-facing error.
      */
-    const settleSuccess = async (usage: TokenUsage, generationId: string | null) => {
+    const settleUsage = async (usage: TokenUsage, generationId: string | null) => {
       const reservation = openReservation;
       if (!reservation) return;
       const actual = actualCallUsd(model, usage);
@@ -795,9 +828,17 @@ export async function POST(request: Request) {
       // internal result): the internal lastResponseId must not leak, and the
       // wire shapes ExaminerChatResponse / ExaminerMarkResponse are unchanged.
       if (action === 'chat') {
-        const result = await runChat(client, model, system, rawMessages, caseImages, callOpts);
+        const result = await runChat(
+          client,
+          model,
+          system,
+          rawMessages,
+          caseImages,
+          callOpts,
+          tracker
+        );
         if ('error' in result) return jsonError(result.error, result.status);
-        await settleSuccess(result.usage, result.lastResponseId);
+        await settleUsage(result.usage, result.lastResponseId);
         const payload: ExaminerChatResponse = {
           reply: result.reply,
           kbLookups: result.kbLookups,
@@ -806,9 +847,9 @@ export async function POST(request: Request) {
         };
         return NextResponse.json(payload);
       }
-      const result = await runMark(client, model, system, rawMessages, meta, callOpts);
+      const result = await runMark(client, model, system, rawMessages, meta, callOpts, tracker);
       if ('error' in result) return jsonError(result.error, result.status);
-      await settleSuccess(result.usage, result.lastResponseId);
+      await settleUsage(result.usage, result.lastResponseId);
       const payload: ExaminerMarkResponse = { marksheet: result.marksheet, usage: result.usage };
       return NextResponse.json(payload);
     } catch (err) {
@@ -817,11 +858,26 @@ export async function POST(request: Request) {
     } finally {
       // Every exit that did not settle successfully — an upstream throw, an
       // unusable-reply {error} result, even an unexpected throw while building
-      // the response — releases the reservation uncharged. No path may leak a
-      // reservation (it would silently eat the user's monthly allowance).
+      // the response — settles the reservation here, exactly once (the success
+      // settle clears openReservation, so it never reaches this). Upstream
+      // calls that completed were billed by the provider, so their tokens are
+      // charged like a success (true cost to the ledger, balances clamped at
+      // the reservation); with no tokens used the reservation is released
+      // uncharged. No path may leak a reservation (it would silently eat the
+      // user's monthly allowance).
       const leftover = openReservation;
       if (leftover) {
-        await settleSpend(leftover.userId, leftover.estUsd, null, leftover.period, leftover.day);
+        const used = tracker.usage;
+        if (
+          used.inputTokens > 0 ||
+          used.outputTokens > 0 ||
+          used.cacheReadTokens > 0 ||
+          used.cacheWriteTokens > 0
+        ) {
+          await settleUsage(used, tracker.lastResponseId);
+        } else {
+          await settleSpend(leftover.userId, leftover.estUsd, null, leftover.period, leftover.day);
+        }
       }
     }
   } catch (err) {
