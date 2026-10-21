@@ -207,7 +207,7 @@ async function handle(request: Request) {
   }
 
   // PER-USER DAILY CAP. The USD caps do not bound provider quota usefully: a
-  // user's $1/month buys ~9 hours of Groq audio, far more than the operator's
+  // user's $1.50/month buys ~13.5 hours of Groq audio, far more than the operator's
   // whole shared free-tier quota — so without this, one user could exhaust the
   // provider and deny dictation to everyone while staying inside their budget
   // (review 2026-07-12). Checked before the reservation, after all validation.

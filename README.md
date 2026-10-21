@@ -43,9 +43,9 @@ Your tier is decided by your email domain:
 | Tier | Who qualifies | Free practice | Allowance |
 |---|---|---|---|
 | **Public** | Major consumer email providers (gmail.com, outlook.com, yahoo.com, icloud.com, …) | Free practice | US$1.50 / month |
-| **Institutional** | Approved SG-healthcare domains (mohh.com.sg, singhealth.com.sg, nuhs.edu.sg, nhg.com.sg, and major hospitals incl. NTFGH, AH, …) | Free practice | US$1 / month |
+| **Institutional** | Approved SG-healthcare domains (mohh.com.sg, singhealth.com.sg, nuhs.edu.sg, nhg.com.sg, and major hospitals incl. NTFGH, AH, …) | Free practice | No monthly cap (only the global US$5 daily cap) |
 
-Both tiers are the same today — free practice on the app's allowance, US$1 / month; the two names only decide which emails may register (consumer vs SG-healthcare domains) and are kept for possible future differentiation. Any other domain (unknown, disposable, personal) can't use the managed door — BYOK still works for everyone. Allowances are per-user USD spend caps per **calendar month, Singapore time**, metered against the app's own ledger; per-address exceptions (a different tier, or a custom allowance) go in `email_overrides`.
+Both tiers get the same free practice on the app's allowance and differ only in the monthly cap: public is US$1.50 / month, institutional has no monthly cap (only the global US$5 daily cap applies). The two names also decide which emails may register (consumer vs SG-healthcare domains). Any other domain (unknown, disposable, personal) can't use the managed door; BYOK still works for everyone. Allowances are per-user USD spend caps per **calendar month, Singapore time**, metered against the app's own ledger; per-address exceptions (a different tier, or a custom allowance) go in `email_overrides`.
 
 **Sign-in is a 6-digit emailed code, not a link, on purpose:** institutional mail security gateways (Mimecast/Proofpoint-style) rewrite or strip links, which silently breaks link-based sign-in for exactly the users the institutional tier serves. A code is plain body text and survives. Codes are single-use, valid for 10 minutes, and limited to 5 attempts; a session lasts 30 days per browser.
 

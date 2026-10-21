@@ -576,8 +576,8 @@ export async function getManagedStatus(): Promise<ManagedStatus> {
 
 /**
  * Per-user daily ceiling on dictation requests (review 2026-07-12). The USD
- * caps alone do not bound this usefully: at Groq's list price a user's $1
- * monthly allowance buys ~9 HOURS of audio — far more than the operator's
+ * caps alone do not bound this usefully: at Groq's list price a user's $1.50
+ * monthly allowance buys ~13.5 HOURS of audio, far more than the operator's
  * entire shared free-tier quota (7,200 audio-seconds/hour, 2,000 requests/day
  * across ALL users on one key). So one enthusiastic — or malicious — user
  * could exhaust the provider quota and deny dictation to everybody, while

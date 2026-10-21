@@ -3,7 +3,7 @@
 //
 // The two tiers share the model list (DeepSeek only, name NOT surfaced to
 // users — "free practice") but differ on allowance since 2026-08-31 (owner
-// decision): public US$1/month, institutional effectively uncapped — the
+// decision): public US$1.50/month, institutional has no monthly cap: the
 // global MANAGED_DAILY_CAP_USD backstop is then their only spend gate.
 // Which bucket an email falls in lives in the DATABASE
 // (allowed_domains + email_overrides — owner-editable without a redeploy);
