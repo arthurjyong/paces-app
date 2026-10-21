@@ -31,7 +31,7 @@ export interface SttModelInfo {
   id: string;
   label: string;
   provider: 'groq' | 'gateway';
-  /** USD per audio minute — zero-markup list prices, verified 2026-07-12. */
+  /** USD per audio minute, zero-markup list prices, verified 2026-07-12; Groq's re-verified unchanged 2026-10-21 (Groq speech-to-text docs). */
   ratePerMinUsd: number;
   /** Provider bills at least this many seconds per request. */
   minBilledSeconds: number;
