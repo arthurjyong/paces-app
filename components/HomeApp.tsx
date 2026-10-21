@@ -133,7 +133,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
   // `paces.apiKey` localStorage key so existing users' keys survive.
   const [claudeKey, setClaudeKey] = useLocalStorage(LS_API_KEY, '');
   // storedModel starts EMPTY = "not explicitly chosen": a fresh signed-in user
-  // then defaults to their free tier model, a fresh BYOK user to Claude Sonnet.
+  // then defaults to their free tier model, a fresh BYOK user to Claude Sonnet 5.5.
   const [storedModel, setStoredModel] = useLocalStorage(LS_MODEL, '');
 
   // Case list + selection.

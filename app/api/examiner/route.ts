@@ -5,7 +5,7 @@
 // them all — the server switches only baseURL (fixed map in lib/providers.ts,
 // never client-supplied) and API key per provider. The model id is both the
 // registry id and the upstream wire id (gateway slugs like
-// 'anthropic/claude-sonnet-4.6' and Anthropic slugs like 'claude-sonnet-4-6'
+// 'anthropic/claude-sonnet-4.6' and Anthropic slugs like 'claude-sonnet-5-5'
 // don't collide), and it drives everything: allowlist, provider selection,
 // tier gate, pricing.
 //
@@ -39,6 +39,7 @@
 import { NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import type {
+  JSONOutputFormat,
   MessageParam,
   TextBlockParam,
   Tool,
@@ -108,6 +109,13 @@ const MAX_TOOL_ITERATIONS = 3;
 const MANAGED_UNAVAILABLE =
   'Managed access is temporarily unavailable — try again shortly, or add your own API key in Settings';
 
+/**
+ * Fixed, spoiler-free client string when the model declines a turn
+ * (stop_reason 'refusal', from Claude's safety classifiers). Nothing from the
+ * response is forwarded.
+ */
+const REFUSAL_ERROR = 'The model declined to answer this turn. Please rephrase and try again.';
+
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
@@ -161,6 +169,51 @@ const SUBMIT_MARKSHEET_TOOL: Tool = {
       },
     },
     required: ['skills', 'total', 'maxTotal', 'overallImpression', 'biggestImprovement'],
+  },
+};
+
+/**
+ * The marksheet as a structured-output format (output_config.format) for
+ * Anthropic's strict-JSON marking call. Same schema as SUBMIT_MARKSHEET_TOOL's
+ * input_schema (keep the two in step), plus additionalProperties: false on
+ * every object, which structured outputs require.
+ */
+const MARKSHEET_OUTPUT_FORMAT: JSONOutputFormat = {
+  type: 'json_schema',
+  schema: {
+    type: 'object',
+    properties: {
+      skills: {
+        type: 'array',
+        description: 'One entry per skill marked for this encounter.',
+        items: {
+          type: 'object',
+          properties: {
+            skill: { type: 'string', enum: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
+            grade: {
+              type: 'integer',
+              enum: [0, 1, 2],
+              description: '2 = Satisfactory, 1 = Borderline, 0 = Unsatisfactory',
+            },
+            justification: {
+              type: 'string',
+              description: 'One-line justification tied to the rubric descriptors.',
+            },
+          },
+          required: ['skill', 'grade', 'justification'],
+          additionalProperties: false,
+        },
+      },
+      total: { type: 'number' },
+      maxTotal: { type: 'number' },
+      overallImpression: { type: 'string' },
+      biggestImprovement: {
+        type: 'string',
+        description: 'The single change that would most improve the weakest skill.',
+      },
+    },
+    required: ['skills', 'total', 'maxTotal', 'overallImpression', 'biggestImprovement'],
+    additionalProperties: false,
   },
 };
 
@@ -309,6 +362,10 @@ interface CallOpts {
   forcedToolChoice: boolean;
   /** send thinking:{type:'disabled'} — for endpoints where it defaults ON */
   thinkingOff: boolean;
+  /** max_tokens for the chat calls and the strict-JSON marking call */
+  maxTokens: number;
+  /** strict-JSON marking also sends the marksheet schema as structured output (Anthropic) */
+  structuredMarksheet: boolean;
   /**
    * DeepSeek on the gateway only: prefer DeepSeek's own host (the cheapest of
    * the six serving the model; the others cost about 2 to 4x per case) and send
@@ -365,7 +422,7 @@ async function runChat(
     client.messages.create(
       {
         model,
-        max_tokens: 2500,
+        max_tokens: opts.maxTokens,
         system,
         messages,
         tools: [SEARCH_KB_TOOL],
@@ -431,6 +488,10 @@ async function runChat(
     }
   }
 
+  // A declined turn ends the loop with stop_reason 'refusal': return the fixed
+  // string, never the partial or empty reply.
+  if (response.stop_reason === 'refusal') return { error: REFUSAL_ERROR, status: 502 };
+
   const raw = textParts.join('\n\n').trim();
   // Resolve any {{IMG:id}} markers into revealed photos and strip them from the
   // shown text. Runs before the empty check so a marker-only reply still counts
@@ -472,7 +533,7 @@ async function runMark(
   let rawMarksheet: unknown;
 
   if (opts.forcedToolChoice) {
-    // Forced tool use — the structured-output path (Anthropic, DeepSeek).
+    // Forced tool use: the structured-output path (DeepSeek on the gateway).
     const messages: MessageParam[] = [
       ...transcript.map((m): MessageParam => ({ role: m.role, content: m.content })),
       {
@@ -498,6 +559,7 @@ async function runMark(
     accumulateUsage(usage, response.usage);
     recordResponse(tracker, response);
     lastResponseId = response.id;
+    if (response.stop_reason === 'refusal') return { error: REFUSAL_ERROR, status: 502 };
     const toolUse = response.content.find(
       (b) => b.type === 'tool_use' && b.name === 'submit_marksheet'
     );
@@ -507,8 +569,11 @@ async function runMark(
     rawMarksheet = toolUse.input;
   } else {
     // Strict-JSON path for endpoints whose tool_choice can't force a call
-    // (Moonshot / MiniMax allow only auto/none) — same instruction + parsing
-    // as the dev CLI bridge, shared in lib/marksheet.ts.
+    // (Moonshot / MiniMax allow only auto/none; the Claude 5.5 models reject a
+    // forced one). Same instruction + parsing as the dev CLI bridge, shared in
+    // lib/marksheet.ts. On Anthropic the call also carries the marksheet schema
+    // as structured output, so the reply is schema-shaped JSON; the shared
+    // validation below still runs.
     const messages: MessageParam[] = [
       ...transcript.map((m): MessageParam => ({ role: m.role, content: m.content })),
       { role: 'user', content: markInstruction(meta) },
@@ -516,16 +581,18 @@ async function runMark(
     const response = await client.messages.create(
       {
         model,
-        max_tokens: 2500,
+        max_tokens: opts.maxTokens,
         system,
         messages,
         ...thinkingParam(opts),
+        ...(opts.structuredMarksheet ? { output_config: { format: MARKSHEET_OUTPUT_FORMAT } } : {}),
       },
       deadlineSignal(opts.deadlineAt)
     );
     accumulateUsage(usage, response.usage);
     recordResponse(tracker, response);
     lastResponseId = response.id;
+    if (response.stop_reason === 'refusal') return { error: REFUSAL_ERROR, status: 502 };
     const text = response.content
       .filter((b) => b.type === 'text')
       .map((b) => b.text)
@@ -732,6 +799,12 @@ export async function POST(request: Request) {
       revealReminder: providerCfg.revealReminder,
       forcedToolChoice: providerCfg.forcedToolChoice,
       thinkingOff: providerCfg.thinkingOff,
+      // Own-key Claude gets more room: thinking (always on for the Claude 5.5
+      // models) shares max_tokens with the reply, and the user pays only for
+      // the tokens used. Every other provider keeps 2,500, which the metered
+      // hold (lib/pricing.ts) is sized to.
+      maxTokens: provider === 'anthropic' ? 6000 : 2500,
+      structuredMarksheet: provider === 'anthropic',
       deepseekGatewayPin: provider === 'gateway' && model.startsWith('deepseek/'),
     };
 

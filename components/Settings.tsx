@@ -4,7 +4,7 @@
 // no provider jargon (the audience is clinicians):
 //   • "Free with sign-in" — the signed-in tier's models (routed on the app's
 //     managed key; shown only when signed in). No key field for these.
-//   • "Your own Claude key" — Claude Sonnet 4.6 (default) / Opus 4.8 / Haiku 4.5,
+//   • "Your own Claude key" — Claude Sonnet 5.5 (default) / Opus 5.5 / Haiku 5.5,
 //     run on the user's own Anthropic key.
 // The key input is Claude-only and appears solely for a Claude (BYOK) model.
 // Collapsible.

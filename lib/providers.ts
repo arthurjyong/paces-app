@@ -92,7 +92,10 @@ export const PROVIDER_CONFIG: Record<ProviderId, ProviderServerConfig> = {
     auth: 'x-api-key',
     demoEnvVar: 'DEMO_ANTHROPIC_API_KEY',
     revealReminder: false,
-    forcedToolChoice: true,
+    // The Claude 5.5 models reject a forced tool_choice (400): marking takes the
+    // strict-JSON path, held to the marksheet schema by structured output
+    // (output_config.format; see runMark in app/api/examiner/route.ts).
+    forcedToolChoice: false,
     systemAsString: false,
     thinkingOff: false,
   },

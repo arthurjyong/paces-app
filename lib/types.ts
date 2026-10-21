@@ -211,21 +211,21 @@ export interface ModelInfo {
  *   selectable BYOK option — reached only by signing in. Gateway Sonnet was
  *   removed 2026-07-09 (no tier runs it — re-add here + in TIER_MODELS to
  *   re-differentiate a tier later; its price row stays in lib/pricing.ts).
- * - anthropic — the BYOK door: the user's own Claude key. Sonnet 4.6 is the
- *   default; Opus 4.8 and Haiku 4.5 are the options. (OpenRouter and a
+ * - anthropic — the BYOK door: the user's own Claude key. Sonnet 5.5 is the
+ *   default; Opus 5.5 and Haiku 5.5 are the options. (OpenRouter and a
  *   BYOK gateway key were dropped 2026-07-09 — BYOK users bring Claude.)
  */
 export const MODELS: readonly ModelInfo[] = [
   { id: 'deepseek/deepseek-v4-pro', provider: 'gateway', label: 'DeepSeek V4 Pro' },
-  { id: 'claude-sonnet-4-6', provider: 'anthropic', label: 'Claude Sonnet 4.6' },
-  { id: 'claude-opus-4-8', provider: 'anthropic', label: 'Claude Opus 4.8' },
-  { id: 'claude-haiku-4-5', provider: 'anthropic', label: 'Claude Haiku 4.5' },
+  { id: 'claude-sonnet-5-5', provider: 'anthropic', label: 'Claude Sonnet 5.5' },
+  { id: 'claude-opus-5-5', provider: 'anthropic', label: 'Claude Opus 5.5' },
+  { id: 'claude-haiku-5-5', provider: 'anthropic', label: 'Claude Haiku 5.5' },
 ];
 
 export const MODEL_ALLOWLIST: readonly string[] = MODELS.map((m) => m.id);
 
-/** The BYOK default (Claude Sonnet 4.6 on the user's own key); signed-in users are switched to their free tier model client-side. */
-export const DEFAULT_MODEL = 'claude-sonnet-4-6';
+/** The BYOK default (Claude Sonnet 5.5 on the user's own key); signed-in users are switched to their free tier model client-side. */
+export const DEFAULT_MODEL = 'claude-sonnet-5-5';
 
 /** Provider of an allowlisted model id; undefined for anything else. */
 export function modelProvider(model: string): ProviderId | undefined {
