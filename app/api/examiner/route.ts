@@ -23,8 +23,9 @@
 // - Metering is reserve-then-settle (lib/managed.ts): the estimate is reserved
 //   only AFTER all request validation (a 400 can never consume allowance), and
 //   every exit path settles exactly once — success moves the REAL usage cost
-//   into spent, any failure releases the reservation uncharged (try/finally —
-//   no path may leak a reservation).
+//   into spent (clamped at the reservation; the ledger keeps the true cost),
+//   any failure releases the reservation uncharged (try/finally — no path may
+//   leak a reservation).
 // - Error payloads are spoiler-free: upstream provider errors are mapped to
 //   fixed generic strings; assembled prompts never appear in errors
 //   (invariant 1). DB/driver error text is likewise never forwarded — a
@@ -756,13 +757,19 @@ export async function POST(request: Request) {
     /**
      * Success-path settle: move the reservation into real spend at the ACTUAL
      * cost from our own price table, keyed idempotent on the last upstream
-     * response id, against the reservation's own period/day. settleSpend never
-     * throws (it logs), so the meter can never turn a delivered examiner reply
-     * into a user-facing error.
+     * response id, against the reservation's own period/day. The balances are
+     * charged at most the reservation (the clamp keeps the allowance and the
+     * daily cap hard bounds); the ledger row keeps the true cost. settleSpend
+     * never throws (it logs), so the meter can never turn a delivered examiner
+     * reply into a user-facing error.
      */
     const settleSuccess = async (usage: TokenUsage, generationId: string | null) => {
       const reservation = openReservation;
       if (!reservation) return;
+      const actual = actualCallUsd(model, usage);
+      if (actual > reservation.estUsd) {
+        console.warn('[examiner] settle exceeded the reservation', { model, action });
+      }
       await settleSpend(
         reservation.userId,
         reservation.estUsd,
@@ -773,7 +780,8 @@ export async function POST(request: Request) {
           outputTokens: usage.outputTokens,
           cacheReadTokens: usage.cacheReadTokens,
           cacheWriteTokens: usage.cacheWriteTokens,
-          costUsd: actualCallUsd(model, usage),
+          costUsd: actual,
+          chargeUsd: Math.min(actual, reservation.estUsd),
           generationId,
         },
         reservation.period,

@@ -698,7 +698,14 @@ export interface SettleUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /** True cost of the call. Always what the usage_events ledger row records. */
   costUsd: number;
+  /**
+   * What the balances (user_balances, global_spend) are charged, when it differs
+   * from costUsd: the examiner clamps it at the reservation so a call can never
+   * push a meter past what was reserved for it. Absent = charge costUsd.
+   */
+  chargeUsd?: number;
   /** provider response id — settlement idempotency key (null on error settles) */
   generationId: string | null;
 }
@@ -706,10 +713,11 @@ export interface SettleUsage {
 /**
  * Post-call settle against the SAME period/day the reservation was booked
  * against (passed in from reserveSpend — never recomputed here; see
- * ReserveOutcome). Releases the reservation and moves the ACTUAL cost into
- * spent_usd + the append-only ledger, idempotent on generationId (the ledger
- * INSERT is the guard). On an upstream error pass usage=null: the reservation
- * is released and nothing is charged.
+ * ReserveOutcome). Releases the reservation, records the ACTUAL cost
+ * (usage.costUsd) in the append-only ledger and moves the charge
+ * (usage.chargeUsd ?? usage.costUsd) into spent_usd, idempotent on
+ * generationId (the ledger INSERT is the guard). Pass usage=null to release the
+ * reservation and charge nothing.
  *
  * Never throws — a settle failure after a delivered examiner reply must not
  * become a user-facing error. On failure it logs loudly and then makes a
@@ -726,6 +734,7 @@ export async function settleSpend(
   day: string
 ): Promise<void> {
   const actualUsd = usage ? usage.costUsd : 0;
+  const chargeUsd = usage ? (usage.chargeUsd ?? usage.costUsd) : 0;
   try {
     await withTransaction(async (client) => {
       if (usage) {
@@ -759,13 +768,13 @@ export async function settleSpend(
         `UPDATE user_balances
          SET reserved_usd = GREATEST(reserved_usd - $3, 0), spent_usd = spent_usd + $4
          WHERE user_id = $1 AND period = $2`,
-        [userId, period, estUsd, actualUsd]
+        [userId, period, estUsd, chargeUsd]
       );
       await client.query(
         `UPDATE global_spend
          SET reserved_usd = GREATEST(reserved_usd - $2, 0), spent_usd = spent_usd + $3
          WHERE day = $1`,
-        [day, estUsd, actualUsd]
+        [day, estUsd, chargeUsd]
       );
     });
   } catch (err) {
