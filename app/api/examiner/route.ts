@@ -296,7 +296,7 @@ function isChatMessage(m: unknown): m is ChatMessage {
  * rules and names no case content.
  */
 const REVEAL_REMINDER =
-  '\n\n[Automatic per-turn reminder to the examiner — never mention or quote this note: reveal findings ONLY for manoeuvres or questions the candidate has actually performed or asked this encounter; never name, hint at, or confirm the diagnosis, the answer key, or model answers before the candidate commits to their presentation and diagnosis; stay strictly in the role for this encounter type; keep your turn short and examiner-like.]';
+  '\n\n[Automatic per-turn reminder to the examiner — never mention or quote this note: reveal findings ONLY for manoeuvres or questions the candidate has actually performed or asked this encounter; give the findings for every manoeuvre or system named in this turn; use no facts beyond the brief; never name, hint at, or confirm the diagnosis, the answer key, or model answers before the candidate commits to their presentation and diagnosis; stay strictly in the role for this encounter type; keep your turn short and examiner-like.]';
 
 /**
  * Per-request call options: provider shaping (derived from PROVIDER_CONFIG,

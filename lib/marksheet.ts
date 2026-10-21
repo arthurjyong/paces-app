@@ -15,7 +15,7 @@ export function markInstruction(meta: CaseMeta): string {
   return `The encounter is over. Complete the marksheet now, based strictly on the transcript above and graded per the marking rubric.
 Respond with ONLY a JSON object — no prose, no code fences — of exactly this shape:
 {"skills":[{"skill":"A","grade":2,"justification":"..."}],"overallImpression":"...","biggestImprovement":"..."}
-Rules: one "skills" entry per marked skill — this encounter marks exactly: ${meta.skills.join(', ')}. "grade" is an integer: 2 = Satisfactory, 1 = Borderline, 0 = Unsatisfactory. Every Borderline or Unsatisfactory needs a one-line justification tied to the rubric descriptors. "biggestImprovement" names the single change that would most improve the weakest skill.`;
+Rules: one "skills" entry per marked skill — this encounter marks exactly: ${meta.skills.join(', ')}. "grade" is an integer: 2 = Satisfactory, 1 = Borderline, 0 = Unsatisfactory. Every Borderline or Unsatisfactory needs a one-line justification tied to the rubric descriptors. "biggestImprovement" names the single change that would most improve the weakest skill. Mark only what the candidate actually said or did: never credit answers the examiner supplied, and never penalise a finding the candidate asked to examine but was not given, or a viva that was not held.`;
 }
 
 /** Pull the outermost JSON object out of a possibly fenced / prefixed reply. */
