@@ -94,6 +94,7 @@ export function getCaseMeta(id: string): CaseMeta | undefined {
  * (invariant 4's rationale); `file` is unused by the client.
  */
 export function toPublicMeta(meta: CaseMeta): PublicCaseMeta {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- the two keys are destructured only to strip them from pub
   const { canonicalSlugs: _slugs, file: _file, ...pub } = meta;
   return pub;
 }

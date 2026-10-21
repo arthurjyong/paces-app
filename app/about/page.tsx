@@ -110,7 +110,6 @@ export default function AboutPage() {
           </li>
           <li>
             Developer? The app&apos;s code is open source (MIT) on{' '}
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
             <a
               href="https://github.com/arthurjyong/paces-app"
               target="_blank"
@@ -169,7 +168,6 @@ export default function AboutPage() {
 
         <h2 className="mt-8 text-base font-semibold">Contact</h2>
         <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- deliberate FULL document load: Permissions-Policy binds to the document, and this page is served microphone=(). A client-side <Link> nav would carry that denial into the app and leave dictation dead on arrival. */}
           <a
             href="mailto:hello@pacesbuddy.com"
             className="underline hover:text-teal-700 dark:hover:text-teal-300"

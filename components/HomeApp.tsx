@@ -177,6 +177,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
     }
   }, []);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: load the local history archive once on mount
     void refreshHistory();
   }, [refreshHistory]);
 
@@ -279,6 +280,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
     const priorWasSignedIn = recorded !== 'anon';
     writeHistoryOwner(currentOwner);
     historySyncedRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: hide the prior owner's history at once on an identity change
     setHistory([]); // drop the prior owner's rows from view immediately
     setHistoryReady(false); // disable History interaction during the wipe
     if (priorWasSignedIn) {
@@ -325,6 +327,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: fetch managed-access status once on mount
     void refreshManagedStatus();
   }, [refreshManagedStatus]);
 
@@ -392,6 +395,7 @@ export default function HomeApp({ dictation }: HomeAppProps = {}) {
     if (!saved) {
       clearSavedEncounter(); // drop unreadable blobs; no-op on an empty slot
       autosaveEnabledRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate: mark the one-time restore done (ref-guarded, runs once)
       setRestoreDone(true);
       return;
     }

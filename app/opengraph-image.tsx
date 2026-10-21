@@ -36,7 +36,6 @@ export default async function Image() {
           padding: 80,
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={logo} width={150} height={150} alt="" />
         <div
           style={{
