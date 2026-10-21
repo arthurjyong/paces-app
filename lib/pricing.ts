@@ -103,6 +103,20 @@ export function actualCallUsd(
 const MAX_CHAT_UPSTREAM_CALLS = 4; // 1 + MAX_TOOL_ITERATIONS(3)
 
 /**
+ * The search_kb results a chat request re-sends, in tokens. Each tool-loop call
+ * after the first carries every earlier lookup result in its messages: call k
+ * (k = 2 to MAX_CHAT_UPSTREAM_CALLS) carries k - 1 results of up to
+ * MAX_KB_RESULT_CHARS each, so across the 4 calls that is (1 + 2 + 3) x 20,000
+ * characters, at 3.5 characters a token. Priced at the input rate once per chat
+ * request. This assumes one lookup per round (the usual case); a round with
+ * several parallel lookups can exceed it, and the settle clamp in the examiner
+ * route then still keeps the meters at the reservation. MUST stay in sync with
+ * MAX_TEXT_CHARS in lib/kb.ts and with MAX_CHAT_UPSTREAM_CALLS above.
+ */
+const MAX_KB_RESULT_CHARS = 20_000; // = MAX_TEXT_CHARS in lib/kb.ts
+const KB_RESEND_TOKENS = Math.ceil(((1 + 2 + 3) * MAX_KB_RESULT_CHARS) / 3.5); // about 34,286
+
+/**
  * Pre-call reserve estimate, USD — a genuine UPPER BOUND on what this one
  * request can settle, so the per-user allowance and the global daily cap are
  * HARD bounds on real spend, not soft ones (security invariant 5; review
@@ -116,9 +130,15 @@ const MAX_CHAT_UPSTREAM_CALLS = 4; // 1 + MAX_TOOL_ITERATIONS(3)
  *   absolute worst case — first call writes, and if caching ever misses a
  *   later call it still can't exceed this),
  * - transcript (chars/3.5, English prose lower bound) at the input rate per call,
- * - output = max_tokens (chat 1500 / mark 2500) × reasoningFactor per call,
- * - all × the call count (chat 4, mark 1), × peakMultiplier, +10% headroom,
- *   floored at $0.005.
+ * - output = (chat 1,500 / mark 2,500) × reasoningFactor per call. The chat
+ *   room (max_tokens) is now 2,500 and DeepSeek's thinking counts inside it,
+ *   so the 1,500 figure still bounds a full chat reply for DeepSeek
+ *   (1,500 × 2.5 = 3,750 > 2,500); the Sonnet entry (factor 1) would not be
+ *   bounded, but no managed tier serves it (lib/tiers.ts TIER_MODELS),
+ * - all × the call count (chat 4, mark 1),
+ * - chat only: + the re-sent search_kb results (KB_RESEND_TOKENS) at the input
+ *   rate, once per request,
+ * - all × peakMultiplier, +10% headroom, floored at $0.005.
  * This over-reserves an in-flight call (settle immediately releases down to the
  * REAL cost via actualCallUsd), so a single serialized user barely notices; the
  * payoff is that the cap can never be overshot by an admitted call. The reserve
@@ -142,8 +162,9 @@ export function estimateCallUsd(
       transcriptTokens * p.inputPerM +
       outputTokens * p.outputPerM) /
     1_000_000;
+  const kbResendUsd = action === 'chat' ? (KB_RESEND_TOKENS * p.inputPerM) / 1_000_000 : 0;
   return Math.max(
-    perCallUsd * calls * peakMultiplier(model, at) * 1.1,
+    (perCallUsd * calls + kbResendUsd) * peakMultiplier(model, at) * 1.1,
     0.005
   );
 }
