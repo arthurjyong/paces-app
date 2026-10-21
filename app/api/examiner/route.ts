@@ -79,7 +79,7 @@ import { devCliEnabled, runCliChat, runCliMark } from '@/lib/devCli';
 export const runtime = 'nodejs';
 // Claude calls (especially marking) can run well past Vercel's default function
 // timeout; without this the platform kills the request mid-generation.
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const MAX_MESSAGES = 400;
 const MAX_MESSAGE_CHARS = 30_000;
@@ -297,7 +297,7 @@ async function runChat(
   const call = (override: { thinking?: { type: 'disabled' } } = {}) =>
     client.messages.create({
       model,
-      max_tokens: 1500,
+      max_tokens: 2500,
       system,
       messages,
       tools: [SEARCH_KB_TOOL],
@@ -347,7 +347,7 @@ async function runChat(
     opts.deepseekGatewayPin &&
     response.stop_reason === 'max_tokens' &&
     textParts.length === 0 &&
-    Date.now() - startedAt < 35_000
+    Date.now() - startedAt < 90_000
   ) {
     response = await call({ thinking: { type: 'disabled' } });
     accumulateUsage(usage, response.usage);
